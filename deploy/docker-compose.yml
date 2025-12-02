@@ -1,0 +1,67 @@
+services:
+  backend:
+    build: ../backend
+    container_name: trickyclip-backend
+    restart: unless-stopped
+    env_file:
+      - ../backend/.env
+    ports:
+      - "8001:8000"
+    volumes:
+      - ../backend:/app
+      - trickyclip-data:/data
+      - ../secrets:/app/secrets:ro
+    depends_on:
+      - db
+      - redis
+
+  worker:
+    build: ../backend
+    container_name: trickyclip-worker
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    env_file:
+      - ../backend/.env
+    volumes:
+      - ../backend:/app
+      - trickyclip-data:/data
+      - ../secrets:/app/secrets:ro
+    depends_on:
+      - backend
+      - redis
+      - db
+
+  frontend:
+    build: ../frontend
+    container_name: trickyclip-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:15
+    container_name: trickyclip-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trickyclip
+      POSTGRES_PASSWORD: trickyclip
+      POSTGRES_DB: trickyclip
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: trickyclip-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+
+volumes:
+  trickyclip-data:
+  postgres-data:
+  redis-data:
