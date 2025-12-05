@@ -32,10 +32,15 @@ class FinalClip(SQLModel, table=True):
 
     camera_id: str = Field(index=True)
     fps_label: str = Field(index=True)
+    resolution_label: str = Field(default="unknown", index=True)
+    aspect_ratio: str = Field(default="unknown")
     date: dt.date = Field(index=True)
 
     stored_path: str = Field(unique=True)
     drive_file_id: Optional[str] = Field(default=None, nullable=True)
+    drive_url: Optional[str] = Field(default=None, nullable=True)
+    is_uploaded_to_drive: bool = Field(default=False)
+    clip_hash: Optional[str] = Field(default=None, nullable=True, index=True)
     filename: str = Field(index=True)
 
     created_at: datetime = Field(default_factory=datetime.utcnow)

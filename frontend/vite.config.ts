@@ -7,6 +7,11 @@ export default defineConfig({
   server: {
     host: true, // needed for docker
     port: 3000,
+    allowedHosts: [
+      'trickyclip.com',
+      'localhost',
+      '127.0.0.1'
+    ],
     proxy: {
         '/api': {
             target: 'http://backend:8000',

@@ -2,7 +2,7 @@ services:
   backend:
     build: ../backend
     container_name: trickyclip-backend
-    restart: unless-stopped
+    restart: always
     env_file:
       - ../backend/.env
     ports:
@@ -17,11 +17,12 @@ services:
 
   worker:
     build: ../backend
-    container_name: trickyclip-worker
     command: ["python", "-m", "app.worker"]
-    restart: unless-stopped
+    restart: always
     env_file:
       - ../backend/.env
+    environment:
+      - WORKER_CONCURRENCY=2
     volumes:
       - ../backend:/app
       - trickyclip-data:/data
@@ -30,11 +31,14 @@ services:
       - backend
       - redis
       - db
+    deploy:
+      mode: replicated
+      replicas: 2
 
   frontend:
     build: ../frontend
     container_name: trickyclip-frontend
-    restart: unless-stopped
+    restart: always
     ports:
       - "3000:3000"
     volumes:
@@ -46,7 +50,7 @@ services:
   db:
     image: postgres:15
     container_name: trickyclip-postgres
-    restart: unless-stopped
+    restart: always
     environment:
       POSTGRES_USER: trickyclip
       POSTGRES_PASSWORD: trickyclip
@@ -57,7 +61,7 @@ services:
   redis:
     image: redis:7
     container_name: trickyclip-redis
-    restart: unless-stopped
+    restart: always
     volumes:
       - redis-data:/data
 

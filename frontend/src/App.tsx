@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import UploadPage from './pages/upload';
 import SortPage from './pages/sort';
+import JobsPage from './pages/jobs';
+import ClipsPage from './pages/clips';
 
 function App() {
   return (
@@ -11,6 +13,7 @@ function App() {
             <Link to="/" className="font-bold text-xl">TrickyClip</Link>
             <Link to="/upload" className="hover:text-blue-600">Upload</Link>
             <Link to="/sort" className="hover:text-blue-600">Sort</Link>
+            <Link to="/jobs" className="hover:text-blue-600">Jobs</Link>
             <Link to="/clips" className="hover:text-blue-600">Clips</Link>
           </div>
         </nav>
@@ -19,7 +22,8 @@ function App() {
             <Route path="/" element={<div className="text-center mt-20">Welcome to TrickyClip. <Link to="/upload" className="text-blue-600 underline">Upload videos</Link> to start.</div>} />
             <Route path="/upload" element={<UploadPage />} />
             <Route path="/sort" element={<SortPage />} />
-            <Route path="/clips" element={<div>Clips page coming soon</div>} />
+            <Route path="/jobs" element={<JobsPage />} />
+            <Route path="/clips" element={<ClipsPage />} />
           </Routes>
         </main>
       </div>

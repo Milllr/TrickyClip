@@ -13,6 +13,13 @@ class OriginalFile(SQLModel, table=True):
     fps_label: str = Field(index=True)
     fps: float
     duration_ms: int
+    width: int = Field(default=0)
+    height: int = Field(default=0)
+    aspect_ratio: str = Field(default="unknown")
+    resolution_label: str = Field(default="unknown", index=True)
+    processing_status: str = Field(default="pending", index=True)  # pending, analyzing, completed, failed
+    analysis_progress_percent: int = Field(default=0)
+    drive_file_id: Optional[str] = Field(default=None, nullable=True)  # if downloaded from drive dump
     recorded_at: datetime = Field(index=True)
     session_name: Optional[str] = Field(default=None, nullable=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)

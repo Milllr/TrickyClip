@@ -13,7 +13,9 @@ class Settings:
     
     # google drive settings
     GOOGLE_DRIVE_CREDENTIALS_PATH: str = os.getenv("GOOGLE_DRIVE_CREDENTIALS_PATH", "/app/secrets/graphic-parsec-480000-i8-0552e472ced1.json")
-    GOOGLE_DRIVE_ROOT_FOLDER_ID: str = os.getenv("GOOGLE_DRIVE_ROOT_FOLDER_ID", "")  # set this to your trickyclip archive folder id
+    GOOGLE_DRIVE_ROOT_FOLDER_ID: str = os.getenv("GOOGLE_DRIVE_ROOT_FOLDER_ID", "")  # trickyclip archive folder id
+    GOOGLE_DRIVE_DUMP_FOLDER_ID: str = os.getenv("GOOGLE_DRIVE_DUMP_FOLDER_ID", "")  # dump folder where you upload raw videos
+    GOOGLE_DRIVE_PROCESSED_FOLDER_ID: str = os.getenv("GOOGLE_DRIVE_PROCESSED_FOLDER_ID", "")  # processed folder for completed raw videos
 
 settings = Settings()
 

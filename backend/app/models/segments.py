@@ -14,6 +14,8 @@ class CandidateSegment(SQLModel, table=True):
     start_ms: int
     end_ms: int
     status: str = Field(index=True, default="UNREVIEWED")
+    confidence_score: float = Field(default=0.5)  # 0.0-1.0, higher = more likely to contain trick
+    detection_method: str = Field(default="basic", index=True)  # "motion", "ml", "manual", "basic"
     locked_by: Optional[UUID] = Field(default=None, nullable=True)
     locked_at: Optional[datetime] = Field(default=None, nullable=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)

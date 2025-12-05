@@ -1,4 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends
+from fastapi.responses import FileResponse
 from sqlmodel import Session
 from app.core.db import get_session
 from app.core.config import settings
@@ -10,6 +11,7 @@ import shutil
 import os
 import hashlib
 from datetime import datetime
+from uuid import UUID
 
 router = APIRouter()
 
@@ -56,11 +58,15 @@ async def upload_file(
         original_filename=file.filename,
         stored_path=final_path,
         file_hash=file_hash,
-        camera_id="CAM_UNKNOWN", # Placeholder or map from meta
+        camera_id="CAM_UNKNOWN", # placeholder or map from meta
         fps_label=f"{int(meta['fps'])}FPS",
         fps=meta['fps'],
         duration_ms=meta['duration_ms'],
-        recorded_at=datetime.utcnow() # Placeholder if meta doesn't have creation_time
+        width=meta.get('width', 0),
+        height=meta.get('height', 0),
+        aspect_ratio=meta.get('aspect_ratio', 'unknown'),
+        resolution_label=meta.get('resolution_label', 'unknown'),
+        recorded_at=datetime.utcnow() # placeholder if meta doesn't have creation_time
     )
     
     if meta.get("creation_time"):
@@ -74,8 +80,24 @@ async def upload_file(
     session.commit()
     session.refresh(db_file)
     
-    # Enqueue analysis
-    enqueue_job(analyze_original_file, db_file.id)
+    # enqueue analysis with file_id tracking
+    enqueue_job(analyze_original_file, db_file.id, file_id=db_file.id)
     
     return {"id": db_file.id, "status": "uploaded"}
+
+@router.get("/media/{file_id}")
+def get_media(file_id: UUID, session: Session = Depends(get_session)):
+    """serve video file for playback in the sort page"""
+    db_file = session.get(OriginalFile, file_id)
+    if not db_file:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    if not os.path.exists(db_file.stored_path):
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    
+    return FileResponse(
+        db_file.stored_path,
+        media_type="video/mp4",
+        filename=db_file.original_filename
+    )
 

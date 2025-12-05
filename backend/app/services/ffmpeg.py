@@ -1,6 +1,7 @@
 import subprocess
 import json
 import os
+from math import gcd
 
 def get_video_metadata(file_path: str) -> dict:
     """
@@ -34,11 +35,36 @@ def get_video_metadata(file_path: str) -> dict:
         tags = data["format"].get("tags", {})
         creation_time = tags.get("creation_time") # ISO string or None
 
+        width = int(video_stream.get("width", 0))
+        height = int(video_stream.get("height", 0))
+        
+        # calculate aspect ratio
+        if width and height:
+            gcd_val = gcd(width, height)
+            aspect_w = width // gcd_val
+            aspect_h = height // gcd_val
+            aspect_ratio = f"{aspect_w}:{aspect_h}"
+        else:
+            aspect_ratio = "unknown"
+        
+        # resolution label (e.g., "1080p", "4K")
+        if height >= 2160:
+            res_label = "4K"
+        elif height >= 1080:
+            res_label = "1080p"
+        elif height >= 720:
+            res_label = "720p"
+        else:
+            res_label = f"{height}p"
+        
         return {
             "duration_ms": int(duration_sec * 1000),
             "fps": fps,
+            "width": width,
+            "height": height,
+            "aspect_ratio": aspect_ratio,
+            "resolution_label": res_label,
             "creation_time": creation_time,
-            # could add more specific camera detection logic here
         }
     except Exception as e:
         print(f"Error probing file {file_path}: {e}")

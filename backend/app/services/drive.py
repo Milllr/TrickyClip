@@ -2,6 +2,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from app.core.config import settings
+from app.core.errors import retry_with_backoff, DriveUploadError
 import os
 
 class DriveService:
@@ -25,7 +26,9 @@ class DriveService:
         results = self.service.files().list(
             q=query,
             spaces='drive',
-            fields='files(id, name)'
+            fields='files(id, name)',
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
         ).execute()
         
         folders = results.get('files', [])
@@ -40,27 +43,29 @@ class DriveService:
         }
         folder = self.service.files().create(
             body=folder_metadata,
-            fields='id'
+            fields='id',
+            supportsAllDrives=True
         ).execute()
         return folder['id']
     
-    def upload_file(self, local_path: str, year: str, session_name: str, person_slug: str, trick_name: str, filename: str) -> str:
+    @retry_with_backoff(max_retries=3, initial_delay=2.0)
+    def upload_file(self, local_path: str, year: str, date_description: str, person_slug: str, trick_name: str, filename: str) -> dict:
         """
         uploads file to google drive with folder structure:
-        root/year/session/person/trick/filename
-        returns drive file id
+        root/year/date[description]/person_tricks/trick_name/filename
+        returns dict with drive_file_id and drive_url
         """
         if not self.service or not settings.GOOGLE_DRIVE_ROOT_FOLDER_ID:
             print("google drive not configured, skipping upload")
             return None
         
-        # build folder path
+        # build folder path: year > date[description] > personTricks > trickName
         year_folder_id = self._ensure_folder(settings.GOOGLE_DRIVE_ROOT_FOLDER_ID, year)
-        session_folder_id = self._ensure_folder(year_folder_id, session_name)
-        person_folder_id = self._ensure_folder(session_folder_id, person_slug)
+        date_folder_id = self._ensure_folder(year_folder_id, date_description)
+        person_folder_id = self._ensure_folder(date_folder_id, f"{person_slug}Tricks")
         trick_folder_id = self._ensure_folder(person_folder_id, trick_name)
         
-        # upload file
+        # upload file with supportsAllDrives to allow service account uploads
         file_metadata = {
             'name': filename,
             'parents': [trick_folder_id]
@@ -69,10 +74,14 @@ class DriveService:
         file = self.service.files().create(
             body=file_metadata,
             media_body=media,
-            fields='id'
+            fields='id, webViewLink',
+            supportsAllDrives=True  # allows service account to upload to shared folders
         ).execute()
         
-        return file['id']
+        return {
+            'drive_file_id': file['id'],
+            'drive_url': file.get('webViewLink', '')
+        }
     
     def delete_file(self, file_id: str):
         """deletes a file from google drive"""

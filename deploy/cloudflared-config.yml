@@ -1,0 +1,16 @@
+tunnel: 5bc69abe-fe75-4cbe-9421-14a358ffede0
+credentials-file: /Users/kahuna/.cloudflared/5bc69abe-fe75-4cbe-9421-14a358ffede0.json
+
+ingress:
+  # route api requests to backend
+  - hostname: trickyclip.com
+    path: /api/*
+    service: http://localhost:8001
+  
+  # route everything else to frontend
+  - hostname: trickyclip.com
+    service: http://localhost:3000
+  
+  # catch-all rule (required)
+  - service: http_status:404
+
