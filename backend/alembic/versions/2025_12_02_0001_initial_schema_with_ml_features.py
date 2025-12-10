@@ -92,3 +92,4 @@ def downgrade() -> None:
     op.drop_column('original_files', 'analysis_progress_percent')
     op.drop_column('original_files', 'processing_status')
 
+

@@ -20,3 +20,4 @@ def get_logger(name: str) -> logging.Logger:
 import os
 os.makedirs('/var/log/trickyclip', exist_ok=True)
 
+

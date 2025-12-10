@@ -31,3 +31,4 @@ ls -lh "${BACKUP_DIR}/${BACKUP_FILE}.gz"
 # optional: upload to google cloud storage for off-site backup
 # gsutil cp "${BACKUP_DIR}/${BACKUP_FILE}.gz" gs://trickyclip-backups/
 
+

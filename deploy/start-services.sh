@@ -28,3 +28,4 @@ echo ""
 echo "Services running:"
 docker compose ps
 
+

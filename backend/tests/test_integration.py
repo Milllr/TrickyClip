@@ -89,3 +89,4 @@ def test_storage_stats(client):
     data = response.json()
     assert "total_gb" in data
 
+

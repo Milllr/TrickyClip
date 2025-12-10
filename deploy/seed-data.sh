@@ -79,3 +79,4 @@ EOF
 
 echo "✅ database seeded with people and tricks"
 
+

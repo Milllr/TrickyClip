@@ -77,3 +77,4 @@ class DetectionError(TrickyClipException):
     """raised when segment detection fails"""
     pass
 
+

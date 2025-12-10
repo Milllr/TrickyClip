@@ -82,13 +82,8 @@ def analyze_original_file(file_id):
                     file.recorded_at
                 )
             
-            # delete original file from VM to save space
-            if os.path.exists(file.stored_path):
-                try:
-                    os.remove(file.stored_path)
-                    print(f"deleted local original: {file.stored_path}")
-                except Exception as e:
-                    print(f"warning: could not delete original: {e}")
+            # NOTE: do NOT delete original file here, it is needed for sorting
+            # cleanup will happen via StorageManager LRU eviction
             
         except Exception as e:
             # mark as failed
@@ -266,6 +261,7 @@ def download_and_process_from_drive(drive_file_id: str, filename: str, file_size
                 stored_path=dest_path,
                 file_hash=file_hash,
                 drive_file_id=drive_file_id,
+                file_size_bytes=file_size,
                 camera_id="CAM_UNKNOWN",
                 fps_label=f"{int(meta['fps'])}FPS",
                 fps=meta['fps'],
@@ -293,9 +289,9 @@ def download_and_process_from_drive(drive_file_id: str, filename: str, file_size
             if current_job:
                 update_job_progress(current_job.id, 60)
             
-            # queue analysis
+            # queue analysis with extended timeout (video analysis takes time)
             from app.services.queue import enqueue_job
-            enqueue_job(analyze_original_file, db_file.id, file_id=db_file.id)
+            enqueue_job(analyze_original_file, db_file.id, file_id=db_file.id, timeout='2h')
             
             if current_job:
                 complete_job(current_job.id)

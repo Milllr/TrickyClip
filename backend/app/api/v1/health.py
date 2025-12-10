@@ -106,3 +106,4 @@ def get_metrics(session: Session = Depends(get_session)):
         }
     }
 
+

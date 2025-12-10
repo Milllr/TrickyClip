@@ -41,3 +41,4 @@ def test_smart_detection_fallback():
     # fallback should still return something
     assert isinstance(segments, list)
 
+

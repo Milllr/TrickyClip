@@ -18,3 +18,4 @@ print(f'Cleanup complete: {result}')
 
 echo "$(date): cleanup finished" >> $LOG_FILE
 
+

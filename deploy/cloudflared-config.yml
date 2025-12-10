@@ -14,3 +14,4 @@ ingress:
   # catch-all rule (required)
   - service: http_status:404
 
+

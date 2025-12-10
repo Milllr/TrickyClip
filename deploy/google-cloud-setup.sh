@@ -49,3 +49,4 @@ echo "1. Upload your TrickyClip files to /opt/trickyclip"
 echo "2. Set up Cloudflare tunnel credentials"
 echo "3. Run docker-compose up -d"
 
+

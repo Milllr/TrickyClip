@@ -12,7 +12,7 @@ class DriveService:
         if os.path.exists(settings.GOOGLE_DRIVE_CREDENTIALS_PATH):
             self.credentials = service_account.Credentials.from_service_account_file(
                 settings.GOOGLE_DRIVE_CREDENTIALS_PATH,
-                scopes=['https://www.googleapis.com/auth/drive.file']
+                scopes=['https://www.googleapis.com/auth/drive']
             )
             self.service = build('drive', 'v3', credentials=self.credentials)
     
@@ -21,14 +21,12 @@ class DriveService:
         if not self.service:
             return None
             
-        # search for existing folder
+        # search for existing folder (personal drive mode: removed supportsAllDrives)
         query = f"name='{folder_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
         results = self.service.files().list(
             q=query,
             spaces='drive',
-            fields='files(id, name)',
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True
+            fields='files(id, name)'
         ).execute()
         
         folders = results.get('files', [])
@@ -43,8 +41,7 @@ class DriveService:
         }
         folder = self.service.files().create(
             body=folder_metadata,
-            fields='id',
-            supportsAllDrives=True
+            fields='id'
         ).execute()
         return folder['id']
     
@@ -65,7 +62,7 @@ class DriveService:
         person_folder_id = self._ensure_folder(date_folder_id, f"{person_slug}Tricks")
         trick_folder_id = self._ensure_folder(person_folder_id, trick_name)
         
-        # upload file with supportsAllDrives to allow service account uploads
+        # upload file (personal drive mode: removed supportsAllDrives)
         file_metadata = {
             'name': filename,
             'parents': [trick_folder_id]
@@ -74,14 +71,28 @@ class DriveService:
         file = self.service.files().create(
             body=file_metadata,
             media_body=media,
-            fields='id, webViewLink',
-            supportsAllDrives=True  # allows service account to upload to shared folders
+            fields='id, webViewLink'
         ).execute()
         
         return {
             'drive_file_id': file['id'],
             'drive_url': file.get('webViewLink', '')
         }
+
+    def move_file(self, file_id: str, target_folder_id: str):
+        """moves a file to a target folder (server-side move)"""
+        if not self.service:
+            return None
+            
+        file = self.service.files().get(fileId=file_id, fields='parents').execute()
+        previous_parents = ",".join(file.get('parents'))
+        
+        return self.service.files().update(
+            fileId=file_id,
+            addParents=target_folder_id,
+            removeParents=previous_parents,
+            fields='id, parents'
+        ).execute()
     
     def delete_file(self, file_id: str):
         """deletes a file from google drive"""

@@ -17,9 +17,10 @@ class OriginalFile(SQLModel, table=True):
     height: int = Field(default=0)
     aspect_ratio: str = Field(default="unknown")
     resolution_label: str = Field(default="unknown", index=True)
-    processing_status: str = Field(default="pending", index=True)  # pending, analyzing, completed, failed
+    processing_status: str = Field(default="pending", index=True)  # pending, analyzing, completed, failed, archived
     analysis_progress_percent: int = Field(default=0)
     drive_file_id: Optional[str] = Field(default=None, nullable=True)  # if downloaded from drive dump
+    file_size_bytes: int = Field(default=0)
     recorded_at: datetime = Field(index=True)
     session_name: Optional[str] = Field(default=None, nullable=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
