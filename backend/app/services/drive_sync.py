@@ -35,7 +35,6 @@ class DriveSyncService:
             return []
         
         # list all videos in dump folder
-        # personal drive: no supportsAllDrives needed
         query = f"'{self.dump_folder_id}' in parents and trashed=false and mimeType contains 'video/'"
         try:
             results = drive_service.service.files().list(
@@ -182,19 +181,6 @@ class DriveSyncService:
             import traceback
             traceback.print_exc()
     
-    def upload_small_clip(self, local_path: str, year: str, date_description: str, person_slug: str, trick_name: str, filename: str, db_session=None) -> dict:
-        """upload small clip using OAuth"""
-        # reuse existing upload logic from drive service
-        return drive_service.upload_file(
-            local_path=local_path,
-            year=year,
-            date_description=date_description,
-            person_slug=person_slug,
-            trick_name=trick_name,
-            filename=filename,
-            db_session=db_session
-        )
-
 
 # singleton instance
 drive_sync = DriveSyncService()

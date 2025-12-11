@@ -77,7 +77,15 @@ Queues analysis job (timeout: 2h)
 ```
 Worker picks up analyze_original_file job
     ↓
-ML detection: OpenCV motion analysis
+Generate analysis proxy (720p for efficiency)
+    ↓
+Stage 1: Motion + Audio detection
+  - ORB keypoint tracking for camera-stabilized motion
+  - Audio energy analysis for impact sounds
+  - Candidate window fusion
+    ↓
+Stage 2 (optional): ML scoring with MoViNet
+  - Filters candidates by confidence threshold
     ↓
 Creates CandidateSegment records (UNREVIEWED status)
     ↓
@@ -322,10 +330,15 @@ ffprobe -v quiet -print_format json -show_format -show_streams input.mp4
 ```
 
 ### ML Detection
-- **Algorithm:** OpenCV motion detection
-- **Method:** Frame differencing + threshold
-- **Output:** Segments with confidence scores
-- **Tuning:** Adjustable sensitivity in `detection_ml.py`
+- **Stage 1:** Motion + Audio analysis (always runs)
+  - Stabilized motion detection using ORB keypoints + homography
+  - Audio energy analysis for impact detection
+  - Candidate window fusion with configurable thresholds
+- **Stage 2:** ML scoring with MoViNet (optional, requires trained model)
+  - TFLite runtime for efficient inference
+  - Filters Stage 1 candidates to 5-10 high-confidence segments
+- **Output:** Segments with confidence scores (typically 5-15 per video)
+- **Tuning:** Adjustable thresholds in environment variables (see [DETECTION-PIPELINE.md](DETECTION-PIPELINE.md))
 
 ### Job System
 - **Queue:** RQ (Redis Queue)
@@ -436,10 +449,10 @@ YYYY-MM-DD__Session__Person__Trick__CAMID__FPS__v###.mp4
 
 ## 📚 Documentation
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System design & data flow
-- **[DRIVE-WORKFLOW-SETUP.md](DRIVE-WORKFLOW-SETUP.md)** - Google Drive configuration
-- **[deploy/GOOGLE-CLOUD-DEPLOY.md](deploy/GOOGLE-CLOUD-DEPLOY.md)** - VM setup guide
+- **[DETECTION-PIPELINE.md](DETECTION-PIPELINE.md)** - ML detection system details
+- **[deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md)** - Deployment guide
 - **[deploy/DEPLOY-CHECKLIST.md](deploy/DEPLOY-CHECKLIST.md)** - Quick reference
+- **[backend/README.md](backend/README.md)** - Backend architecture
 - **[secrets/README.md](secrets/README.md)** - Credentials info
 
 ---

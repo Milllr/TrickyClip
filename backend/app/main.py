@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from app.core.db import init_db
-from app.api.v1 import upload, sort, people, tricks, jobs, clips, health, admin, upload_chunked, ws, auth, videos
+from app.api.v1 import upload, sort, people, tricks, jobs, clips, health, admin, ws, auth, videos
 from app.core.config import settings
 import os
 
@@ -20,7 +20,6 @@ def read_root():
 
 app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(upload.router, prefix="/api/upload", tags=["upload"])
-app.include_router(upload_chunked.router, prefix="/api/upload-chunked", tags=["upload"])
 app.include_router(sort.router, prefix="/api/sort", tags=["sort"])
 app.include_router(people.router, prefix="/api/people", tags=["people"])
 app.include_router(tricks.router, prefix="/api/tricks", tags=["tricks"])

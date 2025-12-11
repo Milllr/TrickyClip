@@ -24,7 +24,7 @@ class DriveService:
         if not self.service:
             return None
             
-        # search for existing folder (personal drive mode: removed supportsAllDrives)
+        # search for existing folder
         query = f"name='{folder_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
         results = self.service.files().list(
             q=query,

@@ -1,8 +1,6 @@
 from app.core.db import engine
 from sqlmodel import Session, select
 from app.models import OriginalFile, CandidateSegment, FinalClip, Person, Trick
-from app.services.detection import detect_segments
-# old detection removed - now using stage 1 motion+audio detection
 from app.services.ffmpeg import get_video_metadata
 from app.services.drive import drive_service
 from app.services.drive_sync import drive_sync
@@ -249,15 +247,15 @@ def render_and_upload_clip(final_clip_id):
             print(f"  person: {person_slug}")
             print(f"  trick: {trick_name}")
             
-            # use small clip upload with OAuth
-            drive_result = drive_sync.upload_small_clip(
+            # upload to drive with OAuth
+            drive_result = drive_service.upload_file(
                 local_path=output_path,
                 year=year,
                 date_description=date_description,
                 person_slug=person_slug,
                 trick_name=trick_name,
                 filename=clip.filename,
-                db_session=session  # Pass session for OAuth
+                db_session=session
             )
             
             if current_job:
