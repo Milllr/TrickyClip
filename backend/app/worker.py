@@ -5,6 +5,7 @@ from app.services.ffmpeg import get_video_metadata
 from app.services.drive import drive_service
 from app.services.drive_sync import drive_sync
 from app.services.job_tracker import start_job, complete_job, fail_job, update_job_progress
+from app.services.log_publisher import publish_log
 from app.core.config import settings
 import os
 import subprocess
@@ -39,18 +40,23 @@ def analyze_original_file(file_id):
             from app.detection.config import DetectionConfig
             config = DetectionConfig()
             
+            publish_log('worker', 'INFO', f'🎬 starting analysis: {file.original_filename}')
             print(f"[DETECTION] starting stage 1 detection for {file.original_filename}")
             
             # generate proxy video for efficient analysis
             from app.video.proxy_utils import generate_proxy_video, generate_playback_proxy
+            publish_log('worker', 'INFO', '🔄 generating analysis proxy (720p)...')
             proxy_path = generate_proxy_video(file.stored_path)
             
             # ALSO generate playback proxy now (so it's ready for sorting)
+            publish_log('worker', 'INFO', '🎥 pre-generating playback proxy for web...')
             print(f"[DETECTION] pre-generating playback proxy for web...")
             try:
                 playback_proxy = generate_playback_proxy(file.stored_path, max_height=1080)
+                publish_log('worker', 'SUCCESS', f'✅ playback proxy ready: {os.path.basename(playback_proxy)}')
                 print(f"[DETECTION] ✅ playback proxy ready: {playback_proxy}")
             except Exception as e:
+                publish_log('worker', 'WARNING', f'⚠️  playback proxy generation failed: {str(e)}')
                 print(f"[DETECTION] ⚠️ playback proxy generation failed: {e}")
             
             if current_job:
@@ -61,11 +67,13 @@ def analyze_original_file(file_id):
             from app.detection.stage1_audio import compute_audio_energy_timeseries
             from app.detection.stage1_candidates import find_candidate_windows
             
+            publish_log('worker', 'INFO', '📊 analyzing motion patterns (ORB keypoints + homography)...')
             motion_times, motion_energy = compute_motion_energy_timeseries(proxy_path)
             
             if current_job:
                 update_job_progress(current_job.id, 40)
             
+            publish_log('worker', 'INFO', '🔊 analyzing audio energy (impact detection)...')
             audio_times, audio_energy = compute_audio_energy_timeseries(proxy_path)
             
             if current_job:
@@ -77,6 +85,7 @@ def analyze_original_file(file_id):
                 config
             )
             
+            publish_log('worker', 'SUCCESS', f'✅ stage 1 complete: found {len(candidate_windows)} candidate windows')
             print(f"[DETECTION] stage 1 produced {len(candidate_windows)} windows")
             
             # stage 2: ml scoring (if enabled and model available)
@@ -129,6 +138,7 @@ def analyze_original_file(file_id):
                 update_job_progress(current_job.id, 70)
             
             # create candidate segments with confidence scores
+            publish_log('worker', 'INFO', f'💾 saving {len(segments_with_scores)} segments to database...')
             print(f"creating {len(segments_with_scores)} candidate segments in database")
             
             # determine detection method based on what was used
@@ -155,6 +165,7 @@ def analyze_original_file(file_id):
             file.analysis_progress_percent = 100
             session.add(file)
             session.commit()
+            publish_log('worker', 'SUCCESS', f'🎉 analysis complete: {file.original_filename} - {len(segments_with_scores)} segments ready for sorting')
             print(f"analyzed file {file_id}: found {len(segments_with_scores)} segments")
             
             # track job completion
@@ -219,8 +230,10 @@ def render_and_upload_clip(final_clip_id):
                 output_path
             ]
             
+            publish_log('worker', 'INFO', f'🎬 rendering clip: {clip.filename} ({duration_sec:.1f}s)')
             print(f"rendering clip: {' '.join(cmd)}")
             subprocess.run(cmd, check=True, capture_output=True)
+            publish_log('worker', 'SUCCESS', f'✅ clip rendered successfully')
             print(f"rendered to {output_path}")
             
             if current_job:
@@ -241,6 +254,13 @@ def render_and_upload_clip(final_clip_id):
                 raise Exception(f"rendered file not found: {output_path}")
             
             file_size_mb = os.path.getsize(output_path) / (1024 * 1024)
+            publish_log('worker', 'INFO', f'☁️  uploading to drive: {clip.filename} ({file_size_mb:.2f} MB)', {
+                'filename': clip.filename,
+                'size_mb': round(file_size_mb, 2),
+                'year': year,
+                'person': person_slug,
+                'trick': trick_name
+            })
             print(f"uploading clip to drive: {clip.filename} ({file_size_mb:.2f} MB)")
             print(f"  year: {year}")
             print(f"  date: {date_description}")
@@ -267,6 +287,10 @@ def render_and_upload_clip(final_clip_id):
                 clip.is_uploaded_to_drive = True
                 session.add(clip)
                 session.commit()
+                publish_log('worker', 'SUCCESS', f'🎉 clip uploaded to drive successfully!', {
+                    'drive_file_id': drive_result['drive_file_id'][:20] + '...',
+                    'filename': clip.filename
+                })
                 print(f"✅ uploaded to drive successfully!")
                 print(f"   file id: {drive_result['drive_file_id']}")
                 print(f"   url: {drive_result['drive_url']}")
@@ -325,11 +349,17 @@ def download_and_process_from_drive(drive_file_id: str, filename: str, file_size
                 return
             
             # download from drive
+            size_gb = file_size / (1024**3)
+            publish_log('worker', 'INFO', f'📥 downloading from drive: {filename} ({size_gb:.2f} GB)', {
+                'filename': filename,
+                'size_gb': round(size_gb, 2)
+            })
             print(f"downloading {filename} ({file_size / (1024*1024):.2f} MB) from drive...")
             if current_job:
                 update_job_progress(current_job.id, 10)
             
             drive_sync.download_video_from_drive(drive_file_id, filename, dest_path)
+            publish_log('worker', 'SUCCESS', f'✅ download complete: {filename}')
             
             if current_job:
                 update_job_progress(current_job.id, 40)
@@ -373,6 +403,7 @@ def download_and_process_from_drive(drive_file_id: str, filename: str, file_size
             session.commit()
             session.refresh(db_file)
             
+            publish_log('worker', 'SUCCESS', f'✅ video registered in database: {filename}')
             print(f"downloaded and registered: {filename}")
             
             if current_job:
@@ -381,6 +412,7 @@ def download_and_process_from_drive(drive_file_id: str, filename: str, file_size
             # queue analysis with extended timeout (video analysis takes time)
             from app.services.queue import enqueue_job
             enqueue_job(analyze_original_file, db_file.id, file_id=db_file.id, timeout='2h')
+            publish_log('worker', 'INFO', f'📋 queued analysis job for: {filename}')
             
             if current_job:
                 complete_job(current_job.id)
