@@ -59,11 +59,16 @@ class DriveSyncService:
         filters out videos already in DB.
         """
         candidates = self.get_new_videos_from_dump()
+        print(f"[QUEUE] Found {len(candidates)} candidates in dump folder")
+        
         downloadable = []
         
         # get set of known drive_file_ids
         with Session(engine) as session:
             known_ids = set(session.exec(select(OriginalFile.drive_file_id)).all())
+        
+        print(f"[QUEUE] Already have {len(known_ids)} videos in database")
+        print(f"[QUEUE] Known IDs: {list(known_ids)[:5]}..." if known_ids else "[QUEUE] No known IDs")
         
         # check space for each candidate
         # we check current actual free space for the first one
@@ -72,21 +77,29 @@ class DriveSyncService:
         # checking "can I fit THIS file right now" is sufficient.
         
         for video in candidates:
-            if video['id'] in known_ids:
+            vid_id = video['id']
+            vid_name = video['name']
+            
+            if vid_id in known_ids:
+                print(f"[QUEUE] Skipping {vid_name} - already in database (ID: {vid_id})")
                 continue
                 
             size_bytes = int(video.get('size', 0))
+            print(f"[QUEUE] Checking space for {vid_name} ({size_bytes/(1024**3):.2f} GB)")
+            
             if self.check_available_space(size_bytes):
                 downloadable.append(video)
+                print(f"[QUEUE] ✅ Adding {vid_name} to download queue")
                 # For now, let's just return the first one that fits to avoid over-queuing
                 # The periodic sync will pick up more as space clears.
                 return [video] 
             else:
-                print(f"skipping {video['name']} ({size_bytes/(1024**3):.2f} GB) - not enough space")
+                print(f"[QUEUE] ❌ Not enough space for {vid_name} ({size_bytes/(1024**3):.2f} GB)")
                 # if we can't fit the oldest file, we probably shouldn't skip it to download a newer huge one
                 # but maybe a smaller newer one? for now, let's just stop to preserve order priority.
                 break 
-                
+        
+        print(f"[QUEUE] Returning {len(downloadable)} videos for download")
         return downloadable
 
     def download_video_from_drive(self, drive_file_id: str, filename: str, dest_path: str) -> str:
@@ -169,8 +182,8 @@ class DriveSyncService:
             import traceback
             traceback.print_exc()
     
-    def upload_small_clip(self, local_path: str, year: str, date_description: str, person_slug: str, trick_name: str, filename: str) -> dict:
-        """upload small clip"""
+    def upload_small_clip(self, local_path: str, year: str, date_description: str, person_slug: str, trick_name: str, filename: str, db_session=None) -> dict:
+        """upload small clip using OAuth"""
         # reuse existing upload logic from drive service
         return drive_service.upload_file(
             local_path=local_path,
@@ -178,7 +191,8 @@ class DriveSyncService:
             date_description=date_description,
             person_slug=person_slug,
             trick_name=trick_name,
-            filename=filename
+            filename=filename,
+            db_session=db_session
         )
 
 

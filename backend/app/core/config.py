@@ -10,12 +10,21 @@ class Settings:
     ORIGINALS_DIR: str = os.path.join(DATA_DIR, "originals")
     CANDIDATES_DIR: str = os.path.join(DATA_DIR, "candidates")
     FINAL_CLIPS_DIR: str = os.path.join(DATA_DIR, "final_clips")
+    PLAYBACK_PROXIES_DIR: str = os.path.join(DATA_DIR, "playback_proxies")
     
     # google drive settings
     GOOGLE_DRIVE_CREDENTIALS_PATH: str = os.getenv("GOOGLE_DRIVE_CREDENTIALS_PATH", "/app/secrets/graphic-parsec-480000-i8-0552e472ced1.json")
     GOOGLE_DRIVE_ROOT_FOLDER_ID: str = os.getenv("GOOGLE_DRIVE_ROOT_FOLDER_ID", "")  # trickyclip archive folder id
     GOOGLE_DRIVE_DUMP_FOLDER_ID: str = os.getenv("GOOGLE_DRIVE_DUMP_FOLDER_ID", "")  # dump folder where you upload raw videos
     GOOGLE_DRIVE_PROCESSED_FOLDER_ID: str = os.getenv("GOOGLE_DRIVE_PROCESSED_FOLDER_ID", "")  # processed folder for completed raw videos
+    
+    # OAuth settings
+    GOOGLE_OAUTH_CLIENT_ID: str = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
+    GOOGLE_OAUTH_CLIENT_SECRET: str = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
+    GOOGLE_OAUTH_REDIRECT_URI: str = os.getenv("GOOGLE_OAUTH_REDIRECT_URI", "https://trickyclip.com/api/auth/google/callback")
+    
+    # Token encryption key (generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+    TOKEN_ENCRYPTION_KEY: str = os.getenv("TOKEN_ENCRYPTION_KEY", "")
 
 settings = Settings()
 

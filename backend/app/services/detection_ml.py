@@ -146,7 +146,8 @@ def detect_motion_segments(
                 if seg_end - seg_start > max_segment_duration_ms:
                     seg_end = seg_start + max_segment_duration_ms
                 
-                segments.append((seg_start, seg_end, current_max_score))
+                # convert numpy types to python native
+                segments.append((int(seg_start), int(seg_end), float(current_max_score)))
             
             current_start = peak_time
             current_end = peak_time
@@ -158,7 +159,8 @@ def detect_motion_segments(
         seg_end = min(duration_ms, current_end + buffer_ms)
         if seg_end - seg_start > max_segment_duration_ms:
             seg_end = seg_start + max_segment_duration_ms
-        segments.append((seg_start, seg_end, current_max_score))
+        # convert numpy types to python native
+        segments.append((int(seg_start), int(seg_end), float(current_max_score)))
     
     print(f"created {len(segments)} motion-based segments")
     return segments

@@ -66,3 +66,4 @@ def fail_job(rq_job_id: str, error_message: str):
             session.commit()
 
 
+

@@ -32,3 +32,4 @@ ls -lh "${BACKUP_DIR}/${BACKUP_FILE}.gz"
 # gsutil cp "${BACKUP_DIR}/${BACKUP_FILE}.gz" gs://trickyclip-backups/
 
 
+

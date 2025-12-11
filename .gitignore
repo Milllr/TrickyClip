@@ -89,4 +89,33 @@ coverage.xml
 .dmypy.json
 dmypy.json
 
+# planning docs and guides (keep main README.md only)
+ARCHITECTURE.md
+DETECTION-PIPELINE.md
+DETECTION-UPGRADE-SUMMARY.md
+DRIVE-WORKFLOW-SETUP.md
+GOOGLE-DRIVE-SETUP.md
+manual_proxy_trigger.md
+MISSION-CONTROL-DEPLOYMENT.md
+NEXT-STEPS.md
+OAUTH-SETUP-INSTRUCTIONS.md
+PRODUCTION-READY-GUIDE.md
+TESTING-GUIDE.md
+WHATS-FIXED.md
+deploy/DEPLOY-CHECKLIST.md
+deploy/DEPLOYMENT-GUIDE.md
+deploy/DEPLOYMENT.md
+deploy/GOOGLE-CLOUD-DEPLOY.md
+
+# debugging and one-off scripts (keep production scripts in deploy/)
+check_backend_logs.sh
+check_frontend.sh
+check_logs.sh
+check_segments.sh
+debug_sync_worker.sh
+diagnose_and_fix.sh
+force_recreate_sync.sh
+restart_sync_worker.sh
+trigger_proxy.sh
+
 

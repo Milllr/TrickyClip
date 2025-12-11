@@ -21,3 +21,4 @@ import os
 os.makedirs('/var/log/trickyclip', exist_ok=True)
 
 
+

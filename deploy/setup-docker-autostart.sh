@@ -40,3 +40,4 @@ echo "  - Stop: sudo systemctl stop trickyclip-docker"
 echo "  - Status: sudo systemctl status trickyclip-docker"
 
 
+

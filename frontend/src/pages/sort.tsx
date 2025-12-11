@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 interface Segment {
   segment_id: string;
@@ -34,12 +34,14 @@ interface Trick {
 }
 
 export default function SortPage() {
+  const [searchParams] = useSearchParams();
   const [segment, setSegment] = useState<Segment | null>(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<[number, number]>([0, 0]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
-  const [isDragging, setIsDragging] = useState<'start' | 'end' | null>(null);
+  const [isDragging, setIsDragging] = useState<'start' | 'end' | 'region' | null>(null);
+  const [dragStartPos, setDragStartPos] = useState<{x: number, rangeStart: number, rangeEnd: number} | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
@@ -58,6 +60,18 @@ export default function SortPage() {
   const [sessionName, setSessionName] = useState('Session1');
   const [showPersonDropdown, setShowPersonDropdown] = useState(false);
   const [showTrickDropdown, setShowTrickDropdown] = useState(false);
+  
+  const [videoSegments, setVideoSegments] = useState<Array<{
+    segment_id: string;
+    start_ms: number;
+    end_ms: number;
+    status: string;
+    confidence_score: number;
+  }>>([]);
+  
+  const [sessionNames, setSessionNames] = useState<string[]>([]);
+  const [showSessionDropdown, setShowSessionDropdown] = useState(false);
+  const [filteredSessions, setFilteredSessions] = useState<string[]>([]);
 
   // update video playback speed
   useEffect(() => {
@@ -96,9 +110,36 @@ export default function SortPage() {
   }, [trickSearch, tricks]);
 
   useEffect(() => {
-    fetchNext();
+    const segmentId = searchParams.get('segment');
+    if (segmentId) {
+      loadSegmentById(segmentId);
+    } else {
+      fetchNext();
+    }
     fetchMetadata();
+    fetchSessionNames();
   }, []);
+  
+  const fetchSessionNames = async () => {
+    try {
+      const res = await axios.get('/api/sort/session-names');
+      setSessionNames(res.data);
+    } catch (e) {
+      console.error('error fetching session names:', e);
+    }
+  };
+  
+  // filter sessions as user types
+  useEffect(() => {
+    if (sessionName) {
+      const filtered = sessionNames.filter(s => 
+        s.toLowerCase().includes(sessionName.toLowerCase())
+      );
+      setFilteredSessions(filtered);
+    } else {
+      setFilteredSessions(sessionNames);
+    }
+  }, [sessionName, sessionNames]);
 
   const fetchMetadata = async () => {
     try {
@@ -113,10 +154,68 @@ export default function SortPage() {
     }
   };
 
+  const fetchVideoSegments = async (fileId: string) => {
+    try {
+      const res = await axios.get(`/api/sort/segments/${fileId}`);
+      setVideoSegments(res.data);
+    } catch (e) {
+      console.error('error fetching segments:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (segment?.original_file?.id) {
+      fetchVideoSegments(segment.original_file.id);
+    }
+  }, [segment?.original_file?.id]);
+
+  const loadSegmentById = async (segmentId: string) => {
+    setLoading(true);
+    try {
+      const res = await axios.get(`/api/sort/segment/${segmentId}`);
+      setSegment(res.data);
+      
+      // add 2s buffer
+      const bufferMs = 2000;
+      const start = Math.max(0, res.data.start_ms - bufferMs);
+      const end = Math.min(res.data.original_file.duration_ms, res.data.end_ms + bufferMs);
+      setRange([start, end]);
+      setCurrentTime(start);
+      
+      // reset form
+      setCategory('TRICK');
+      setPersonSearch('');
+      setTrickSearch('');
+      setSelectedPerson('');
+      setSelectedTrick('');
+      
+      // autoplay after short delay
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.currentTime = start / 1000;
+          videoRef.current.play().catch(e => console.log('autoplay blocked:', e));
+          setIsPlaying(true);
+        }
+      }, 100);
+    } catch (e) {
+      console.error('Error loading segment:', e);
+      fetchNext(); // fallback to next segment
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchNext = async () => {
     setLoading(true);
     try {
       const res = await axios.get('/api/sort/next');
+      if (!res || !res.data) {
+        console.warn('Empty response from /api/sort/next');
+        setSegment(null);
+        setLoading(false);
+        return;
+      }
+      
       if (res.data.message === 'No more segments') {
         setSegment(null);
       } else {
@@ -134,6 +233,15 @@ export default function SortPage() {
         setTrickSearch('');
         setSelectedPerson('');
         setSelectedTrick('');
+        
+        // autoplay after short delay
+        setTimeout(() => {
+          if (videoRef.current) {
+            videoRef.current.currentTime = start / 1000;
+            videoRef.current.play().catch(e => console.log('autoplay blocked:', e));
+            setIsPlaying(true);
+          }
+        }, 100);
       }
     } catch (e) {
       console.error(e);
@@ -151,9 +259,20 @@ export default function SortPage() {
         end_ms: range[1],
         category,
         person_id: selectedPerson || null,
+        person_name: personSearch.trim() || null,
         trick_id: selectedTrick || null,
+        trick_name: trickSearch.trim() || null,
         session_name: sessionName
       });
+      
+      // refresh segments grid before fetching next
+      if (segment.original_file?.id) {
+        await fetchVideoSegments(segment.original_file.id);
+      }
+      
+      // refresh people and tricks lists to include newly created entries
+      await fetchMetadata();
+      
       fetchNext();
     } catch (e) {
       alert('error saving');
@@ -165,6 +284,12 @@ export default function SortPage() {
     if (!segment) return;
     try {
       await axios.post('/api/sort/trash', { segment_id: segment.segment_id });
+      
+      // refresh segments grid before fetching next
+      if (segment.original_file?.id) {
+        await fetchVideoSegments(segment.original_file.id);
+      }
+      
       fetchNext();
     } catch (e) {
       alert('error trashing');
@@ -184,11 +309,42 @@ export default function SortPage() {
     }
   };
 
+  // precision trim controls
+  const adjustStartTime = (deltaMs: number) => {
+    if (!segment) return;
+    const newStart = Math.max(0, range[0] + deltaMs);
+    const newEnd = Math.max(newStart + 500, range[1]); // ensure 500ms minimum
+    setRange([newStart, newEnd]);
+  };
+
+  const adjustEndTime = (deltaMs: number) => {
+    if (!segment) return;
+    const newEnd = Math.min(segment.original_file.duration_ms, range[1] + deltaMs);
+    const newStart = Math.min(range[0], newEnd - 500);
+    setRange([newStart, newEnd]);
+  };
+
   // timeline drag handlers
   const handleTimelineMouseDown = (handle: 'start' | 'end') => (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(handle);
+  };
+
+  const handleRegionMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!timelineRef.current) return;
+    
+    const rect = timelineRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    
+    setIsDragging('region');
+    setDragStartPos({
+      x,
+      rangeStart: range[0],
+      rangeEnd: range[1]
+    });
   };
 
   const handleTimelineMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
@@ -202,13 +358,36 @@ export default function SortPage() {
     
     if (isDragging === 'start') {
       setRange([Math.min(newTime, range[1] - 500), range[1]]);
-    } else {
+    } else if (isDragging === 'end') {
       setRange([range[0], Math.max(newTime, range[0] + 500)]);
+    } else if (isDragging === 'region' && dragStartPos) {
+      // calculate offset from drag start
+      const deltaX = x - dragStartPos.x;
+      const deltaPercent = deltaX / rect.width;
+      const deltaMs = Math.round(deltaPercent * segment.original_file.duration_ms);
+      
+      // apply offset to both start and end
+      const duration = dragStartPos.rangeEnd - dragStartPos.rangeStart;
+      let newStart = dragStartPos.rangeStart + deltaMs;
+      let newEnd = dragStartPos.rangeEnd + deltaMs;
+      
+      // clamp to video bounds
+      if (newStart < 0) {
+        newStart = 0;
+        newEnd = duration;
+      }
+      if (newEnd > segment.original_file.duration_ms) {
+        newEnd = segment.original_file.duration_ms;
+        newStart = newEnd - duration;
+      }
+      
+      setRange([newStart, newEnd]);
     }
   };
 
   const handleTimelineMouseUp = () => {
     setIsDragging(null);
+    setDragStartPos(null);
   };
 
   const handleTimelineTouchMove = (e: React.TouchEvent) => {
@@ -326,7 +505,7 @@ export default function SortPage() {
 
       <div className="h-full flex flex-col md:flex-row pt-16 md:pt-0">
         {/* video player */}
-        <div className="flex-1 flex items-center justify-center bg-black p-4">
+        <div className="flex-1 flex flex-col items-center justify-center bg-black p-4">
           <video
             ref={videoRef}
             src={`/api/upload/media/${segment.original_file.id}`}
@@ -334,6 +513,59 @@ export default function SortPage() {
             onTimeUpdate={handleVideoTimeUpdate}
             onEnded={() => setIsPlaying(false)}
           />
+          
+          {/* clips list for current video */}
+          {videoSegments.length > 0 && (
+            <div className="mt-4 w-full max-w-3xl p-3 bg-gray-900 rounded border border-gray-700">
+              <div className="text-xs font-semibold text-gray-400 mb-2">
+                all clips from this video ({videoSegments.length})
+              </div>
+              <div className="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto">
+                {videoSegments.map((seg, idx) => (
+                  <div
+                    key={seg.segment_id}
+                    className={`p-2 rounded text-xs cursor-pointer transition ${
+                      seg.segment_id === segment?.segment_id
+                        ? 'bg-blue-600 text-white'
+                        : seg.status === 'ACCEPTED'
+                        ? 'bg-green-900 text-green-300'
+                        : seg.status === 'REJECTED'
+                        ? 'bg-red-900 text-red-300'
+                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                    }`}
+                    onClick={async () => {
+                      try {
+                        const res = await axios.get(`/api/sort/segment/${seg.segment_id}`);
+                        setSegment(res.data);
+                        const bufferMs = 2000;
+                        const start = Math.max(0, res.data.start_ms - bufferMs);
+                        const end = Math.min(res.data.original_file.duration_ms, res.data.end_ms + bufferMs);
+                        setRange([start, end]);
+                        setCurrentTime(start);
+                        
+                        // autoplay
+                        setTimeout(() => {
+                          if (videoRef.current) {
+                            videoRef.current.currentTime = start / 1000;
+                            videoRef.current.play().catch(e => console.log('autoplay blocked:', e));
+                            setIsPlaying(true);
+                          }
+                        }, 100);
+                      } catch (e) {
+                        console.error('error loading segment:', e);
+                      }
+                    }}
+                  >
+                    <div className="font-semibold">#{idx + 1}</div>
+                    <div>{formatTime(seg.start_ms)}</div>
+                    <div className="text-[10px] opacity-75">
+                      {(seg.confidence_score * 100).toFixed(0)}%
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* sidebar controls */}
@@ -358,12 +590,20 @@ export default function SortPage() {
                 videoRef.current.currentTime = newTime / 1000;
               }}
             >
-              {/* selected range */}
+              {/* selected range - now draggable */}
               <div 
-                className="absolute top-0 bottom-0 bg-blue-500 bg-opacity-30 border-l-2 border-r-2 border-blue-400"
+                className="absolute top-0 bottom-0 bg-blue-500 bg-opacity-30 border-l-2 border-r-2 border-blue-400 cursor-move"
                 style={{
                   left: `${(range[0] / segment.original_file.duration_ms) * 100}%`,
                   right: `${100 - (range[1] / segment.original_file.duration_ms) * 100}%`
+                }}
+                onMouseDown={handleRegionMouseDown}
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  const rect = timelineRef.current!.getBoundingClientRect();
+                  const x = e.touches[0].clientX - rect.left;
+                  setIsDragging('region');
+                  setDragStartPos({ x, rangeStart: range[0], rangeEnd: range[1] });
                 }}
               />
               
@@ -461,6 +701,94 @@ export default function SortPage() {
                 ))}
               </div>
             </div>
+
+            {/* precision trim controls */}
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div>
+                <label className="block mb-1 text-xs font-semibold text-gray-400">cut in</label>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => adjustStartTime(-1000)}
+                    className="flex-1 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
+                    title="subtract 1 second from start"
+                  >
+                    -1s
+                  </button>
+                  <button
+                    onClick={() => adjustStartTime(1000)}
+                    className="flex-1 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
+                    title="add 1 second to start"
+                  >
+                    +1s
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block mb-1 text-xs font-semibold text-gray-400">cut out</label>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => adjustEndTime(-1000)}
+                    className="flex-1 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
+                    title="subtract 1 second from end"
+                  >
+                    -1s
+                  </button>
+                  <button
+                    onClick={() => adjustEndTime(1000)}
+                    className="flex-1 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
+                    title="add 1 second to end"
+                  >
+                    +1s
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            {/* clip metadata */}
+            <div className="mt-4 p-3 bg-gray-900 rounded border border-gray-700">
+              <div className="text-xs font-semibold text-gray-400 mb-2">clip details</div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                <div className="text-gray-500">camera:</div>
+                <div className="text-gray-300">{segment.original_file.camera_id || 'unknown'}</div>
+                
+                <div className="text-gray-500">fps:</div>
+                <div className="text-gray-300">{segment.original_file.fps?.toFixed(2) || 'unknown'}</div>
+                
+                <div className="text-gray-500">resolution:</div>
+                <div className="text-gray-300">
+                  {segment.original_file.width}x{segment.original_file.height} ({segment.original_file.resolution_label})
+                </div>
+                
+                <div className="text-gray-500">recorded:</div>
+                <div className="text-gray-300">
+                  {new Date(segment.original_file.recorded_at).toLocaleString()}
+                </div>
+                
+                <div className="text-gray-500">duration:</div>
+                <div className="text-gray-300">
+                  {formatTime(segment.original_file.duration_ms)}
+                </div>
+                
+                <div className="text-gray-500">file size:</div>
+                <div className="text-gray-300">
+                  {segment.original_file.file_size_bytes 
+                    ? (segment.original_file.file_size_bytes / (1024 * 1024)).toFixed(1) + ' MB'
+                    : 'unknown'}
+                </div>
+                
+                <div className="text-gray-500">confidence:</div>
+                <div className="text-gray-300">
+                  {segment.confidence_score 
+                    ? (segment.confidence_score * 100).toFixed(1) + '%'
+                    : 'unknown'}
+                </div>
+                
+                <div className="text-gray-500">detection:</div>
+                <div className="text-gray-300">
+                  {segment.detection_method || 'unknown'}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* clip navigator */}
@@ -494,14 +822,33 @@ export default function SortPage() {
 
           {/* form fields */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <div>
+            <div className="relative">
               <label className="block mb-2 text-sm font-semibold text-gray-300">session name</label>
               <input
                 type="text"
                 value={sessionName}
                 onChange={(e) => setSessionName(e.target.value)}
+                onFocus={() => setShowSessionDropdown(true)}
+                onBlur={() => setTimeout(() => setShowSessionDropdown(false), 200)}
+                autoComplete="off"
                 className="w-full px-3 py-2 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-white"
               />
+              {showSessionDropdown && filteredSessions.length > 0 && (
+                <div className="absolute z-30 w-full mt-1 bg-gray-700 border border-gray-600 rounded max-h-48 overflow-y-auto shadow-xl">
+                  {filteredSessions.map(name => (
+                    <div
+                      key={name}
+                      onClick={() => {
+                        setSessionName(name);
+                        setShowSessionDropdown(false);
+                      }}
+                      className="px-3 py-2 hover:bg-gray-600 cursor-pointer text-white"
+                    >
+                      {name}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>

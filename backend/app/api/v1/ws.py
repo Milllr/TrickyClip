@@ -1,7 +1,8 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from typing import Dict, Set
 import json
 import asyncio
+from datetime import datetime
 
 router = APIRouter()
 
@@ -29,6 +30,54 @@ async def websocket_progress(websocket: WebSocket):
             active_connections.remove(websocket)
 
 
+@router.websocket("/logs")
+async def websocket_logs(websocket: WebSocket):
+    """Stream real-time logs from all services via Redis pub/sub"""
+    await websocket.accept()
+    
+    try:
+        import redis.asyncio as aioredis
+        from app.core.config import settings
+        
+        redis = await aioredis.from_url(settings.REDIS_URL)
+        pubsub = redis.pubsub()
+        await pubsub.subscribe('system_logs')
+        
+        # Send initial connection message
+        await websocket.send_json({
+            "type": "connected",
+            "timestamp": datetime.utcnow().isoformat(),
+            "source": "system",
+            "level": "INFO",
+            "message": "🔌 Log stream connected",
+            "metadata": {}
+        })
+        
+        # Stream logs
+        async for message in pubsub.listen():
+            if message['type'] == 'message':
+                try:
+                    log_data = json.loads(message['data'])
+                    await websocket.send_json(log_data)
+                except Exception as e:
+                    print(f"Error parsing log message: {e}")
+                
+    except WebSocketDisconnect:
+        print("Client disconnected from log stream")
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        try:
+            await pubsub.unsubscribe('system_logs')
+            await redis.close()
+        except:
+            pass
+
+
+
+
 async def broadcast_progress(job_id: str, progress: int, status: str, message: str = ""):
     """broadcast progress update to all connected clients"""
     if not active_connections:
@@ -53,5 +102,6 @@ async def broadcast_progress(job_id: str, progress: int, status: str, message: s
     # cleanup disconnected clients
     for conn in disconnected:
         active_connections.discard(conn)
+
 
 

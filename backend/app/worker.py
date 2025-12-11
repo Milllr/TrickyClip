@@ -2,7 +2,7 @@ from app.core.db import engine
 from sqlmodel import Session, select
 from app.models import OriginalFile, CandidateSegment, FinalClip, Person, Trick
 from app.services.detection import detect_segments
-from app.services.detection_ml import detect_segments_smart
+# old detection removed - now using stage 1 motion+audio detection
 from app.services.ffmpeg import get_video_metadata
 from app.services.drive import drive_service
 from app.services.drive_sync import drive_sync
@@ -36,10 +36,92 @@ def analyze_original_file(file_id):
             if current_job:
                 update_job_progress(current_job.id, 10)
             
-            # detect segments using ML motion detection
-            print(f"starting ML detection for {file.original_filename}")
-            segments_with_scores = detect_segments_smart(file.stored_path, file.duration_ms)
-            print(f"ml detection returned {len(segments_with_scores)} segments")
+            # check if new detection pipeline is enabled
+            # always use stage 1 detection (motion + audio)
+            from app.detection.config import DetectionConfig
+            config = DetectionConfig()
+            
+            print(f"[DETECTION] starting stage 1 detection for {file.original_filename}")
+            
+            # generate proxy video for efficient analysis
+            from app.video.proxy_utils import generate_proxy_video, generate_playback_proxy
+            proxy_path = generate_proxy_video(file.stored_path)
+            
+            # ALSO generate playback proxy now (so it's ready for sorting)
+            print(f"[DETECTION] pre-generating playback proxy for web...")
+            try:
+                playback_proxy = generate_playback_proxy(file.stored_path, max_height=1080)
+                print(f"[DETECTION] ✅ playback proxy ready: {playback_proxy}")
+            except Exception as e:
+                print(f"[DETECTION] ⚠️ playback proxy generation failed: {e}")
+            
+            if current_job:
+                update_job_progress(current_job.id, 20)
+            
+            # stage 1: motion + audio analysis
+            from app.detection.stage1_motion import compute_motion_energy_timeseries
+            from app.detection.stage1_audio import compute_audio_energy_timeseries
+            from app.detection.stage1_candidates import find_candidate_windows
+            
+            motion_times, motion_energy = compute_motion_energy_timeseries(proxy_path)
+            
+            if current_job:
+                update_job_progress(current_job.id, 40)
+            
+            audio_times, audio_energy = compute_audio_energy_timeseries(proxy_path)
+            
+            if current_job:
+                update_job_progress(current_job.id, 50)
+            
+            candidate_windows = find_candidate_windows(
+                motion_times, motion_energy,
+                audio_times, audio_energy,
+                config
+            )
+            
+            print(f"[DETECTION] stage 1 produced {len(candidate_windows)} windows")
+            
+            # stage 2: ml scoring (if enabled and model available)
+            if config.use_ml_stage2:
+                from app.detection import get_highlight_model
+                
+                highlight_model = get_highlight_model()
+                
+                if highlight_model:
+                    print(f"[DETECTION] running stage 2 ml scoring...")
+                    
+                    filtered_windows = []
+                    for window in candidate_windows:
+                        # score with ml model
+                        ml_score = highlight_model.score_clip(
+                            proxy_path,
+                            window.start_sec,
+                            window.end_sec
+                        )
+                        
+                        # combine scores: weighted average
+                        final_score = (
+                            config.ml_weight * ml_score +
+                            config.stage1_weight * window.combined_score
+                        )
+                        
+                        # filter by ml threshold
+                        if final_score >= config.ml_threshold:
+                            window.ml_score = ml_score
+                            window.final_score = final_score
+                            filtered_windows.append(window)
+                    
+                    print(f"[DETECTION] stage 2 filtered to {len(filtered_windows)} windows")
+                    candidate_windows = filtered_windows
+                else:
+                    print(f"[DETECTION] ml model not available, using stage 1 only")
+            
+            # convert to segments format
+            segments_with_scores = [
+                (int(w.start_sec * 1000), int(w.end_sec * 1000), 
+                 getattr(w, 'final_score', w.combined_score))
+                for w in candidate_windows
+            ]
             
             file.analysis_progress_percent = 70
             session.add(file)
@@ -50,13 +132,21 @@ def analyze_original_file(file_id):
             
             # create candidate segments with confidence scores
             print(f"creating {len(segments_with_scores)} candidate segments in database")
+            
+            # determine detection method based on what was used
+            if config.use_ml_stage2:
+                detection_method = "motion_audio_ml"
+            else:
+                detection_method = "motion_audio_stage1"
+            
             for start, end, confidence in segments_with_scores:
+                # ensure all values are python native types (not numpy)
                 seg = CandidateSegment(
                     original_file_id=file.id,
-                    start_ms=start,
-                    end_ms=end,
-                    confidence_score=confidence,
-                    detection_method="motion"
+                    start_ms=int(start),
+                    end_ms=int(end),
+                    confidence_score=float(confidence),
+                    detection_method=detection_method
                 )
                 session.add(seg)
             
@@ -159,14 +249,15 @@ def render_and_upload_clip(final_clip_id):
             print(f"  person: {person_slug}")
             print(f"  trick: {trick_name}")
             
-            # use small clip upload (non-resumable for small files to avoid quota)
+            # use small clip upload with OAuth
             drive_result = drive_sync.upload_small_clip(
                 local_path=output_path,
                 year=year,
                 date_description=date_description,
                 person_slug=person_slug,
                 trick_name=trick_name,
-                filename=clip.filename
+                filename=clip.filename,
+                db_session=session  # Pass session for OAuth
             )
             
             if current_job:
@@ -301,6 +392,72 @@ def download_and_process_from_drive(drive_file_id: str, filename: str, file_size
             if current_job:
                 fail_job(current_job.id, str(e))
             raise
+
+
+def drive_sync_poller():
+    """background worker that polls drive every 2 minutes"""
+    import time
+    from app.services.queue import enqueue_job, queue
+    from app.services.log_publisher import publish_log
+    
+    publish_log('drive-sync', 'INFO', '🔄 Drive sync poller started')
+    print("🔄 Drive sync poller started")
+    
+    while True:
+        try:
+            publish_log('drive-sync', 'INFO', '📡 Polling Drive dump folder...')
+            print("📡 Polling Drive dump folder...")
+            
+            videos = drive_sync.get_download_queue()
+            
+            if videos:
+                publish_log('drive-sync', 'SUCCESS', f'✅ Found {len(videos)} new videos', {
+                    'count': len(videos),
+                    'videos': [v['name'] for v in videos]
+                })
+                print(f"✅ Found {len(videos)} new videos, queuing downloads")
+                
+                for video in videos:
+                    # check if job already queued
+                    drive_file_id = video['id']
+                    existing_job_queued = False
+                    
+                    for job in queue.jobs:
+                        if job.args and len(job.args) > 0 and job.args[0] == drive_file_id:
+                            print(f"  ⏭️  Job already queued for {video['name']}, skipping")
+                            existing_job_queued = True
+                            break
+                    
+                    if not existing_job_queued:
+                        enqueue_job(
+                            download_and_process_from_drive,
+                            video['id'],
+                            video['name'],
+                            int(video.get('size', 0)),
+                            timeout='2h'
+                        )
+                        publish_log('drive-sync', 'INFO', f'📥 Queued download: {video["name"]}', {
+                            'filename': video['name'],
+                            'size_gb': round(int(video.get('size', 0)) / (1024**3), 2)
+                        })
+                        print(f"  ✅ Queued: {video['name']}")
+            else:
+                publish_log('drive-sync', 'INFO', '📭 No new videos found')
+                print("📭 No new videos found")
+            
+            # Publish countdown every 10 seconds
+            for remaining in range(120, 0, -10):
+                publish_log('drive-sync', 'DEBUG', f'⏱️  Next poll in {remaining}s', {
+                    'next_poll_seconds': remaining
+                })
+                time.sleep(10)
+                
+        except Exception as e:
+            publish_log('drive-sync', 'ERROR', f'⚠️  Drive sync poll error: {str(e)}')
+            print(f"⚠️  Drive sync poll error: {e}")
+            import traceback
+            traceback.print_exc()
+            time.sleep(120)
 
 
 if __name__ == "__main__":

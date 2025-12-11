@@ -35,6 +35,23 @@ services:
       mode: replicated
       replicas: 2
 
+  drive-sync-worker:
+    build: ../backend
+    container_name: trickyclip-drive-sync
+    command: ["python", "-u", "/app/app/sync_worker.py"]
+    restart: always
+    env_file:
+      - ../backend/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ../backend:/app
+      - trickyclip-data:/data
+      - ../secrets:/app/secrets:ro
+    depends_on:
+      - redis
+      - db
+
   frontend:
     build: ../frontend
     container_name: trickyclip-frontend

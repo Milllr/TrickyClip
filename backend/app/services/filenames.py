@@ -1,3 +1,13 @@
+import re
+
+
+def slugify(text: str) -> str:
+    """convert text to lowercase slug suitable for filenames"""
+    text = text.lower().strip()
+    text = re.sub(r'[^a-z0-9]+', '', text)
+    return text[:50]  # limit length
+
+
 def generate_filename(date, session, person_slug, trick_name, cam_id, fps_label, resolution_label, aspect_ratio, existing_versions: list[int]) -> str:
     """
     generates a filename: YYYY-MM-DD__Session__Person__Trick__CAMID__RES__AR__FPS__v###.mp4

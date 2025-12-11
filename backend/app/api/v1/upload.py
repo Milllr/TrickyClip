@@ -85,19 +85,81 @@ async def upload_file(
     
     return {"id": db_file.id, "status": "uploaded"}
 
+@router.get("/media/{file_id}/info")
+def get_media_info(file_id: UUID, session: Session = Depends(get_session)):
+    """diagnostic endpoint to check video file status"""
+    from app.video.proxy_utils import generate_playback_proxy
+    from pathlib import Path
+    
+    db_file = session.get(OriginalFile, file_id)
+    if not db_file:
+        return {"error": "File not found in database"}
+    
+    info = {
+        "file_id": str(file_id),
+        "original_filename": db_file.original_filename,
+        "stored_path": db_file.stored_path,
+        "original_exists": os.path.exists(db_file.stored_path),
+    }
+    
+    if info["original_exists"]:
+        info["original_size"] = os.path.getsize(db_file.stored_path)
+        
+        # Check what proxy would be generated
+        input_path_obj = Path(db_file.stored_path)
+        proxy_filename = input_path_obj.stem + "_web.mp4"
+        proxy_dir = Path(os.getenv("DATA_DIR", "/data")) / "playback_proxies"
+        proxy_path = proxy_dir / proxy_filename
+        
+        info["proxy_path"] = str(proxy_path)
+        info["proxy_exists"] = proxy_path.exists()
+        if info["proxy_exists"]:
+            info["proxy_size"] = proxy_path.stat().st_size
+    
+    return info
+
 @router.get("/media/{file_id}")
 def get_media(file_id: UUID, session: Session = Depends(get_session)):
-    """serve video file for playback in the sort page"""
+    """serve video file for playback (with browser-compatible proxy)"""
+    from app.video.proxy_utils import generate_playback_proxy
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
     db_file = session.get(OriginalFile, file_id)
     if not db_file:
         raise HTTPException(status_code=404, detail="File not found")
     
     if not os.path.exists(db_file.stored_path):
+        logger.error(f"Original file not found on disk: {db_file.stored_path}")
         raise HTTPException(status_code=404, detail="File not found on disk")
     
-    return FileResponse(
-        db_file.stored_path,
-        media_type="video/mp4",
-        filename=db_file.original_filename
-    )
+    try:
+        # Generate/use playback proxy (this is synchronous and will wait)
+        logger.info(f"Generating proxy for: {db_file.stored_path}")
+        proxy_path = generate_playback_proxy(db_file.stored_path, max_height=1080)
+        
+        # Verify proxy exists
+        if not os.path.exists(proxy_path):
+            logger.error(f"Proxy generation failed, file doesn't exist: {proxy_path}")
+            raise HTTPException(status_code=500, detail="Failed to generate playback proxy")
+        
+        # Verify proxy has content
+        file_size = os.path.getsize(proxy_path)
+        if file_size == 0:
+            logger.error(f"Proxy file is empty: {proxy_path}")
+            raise HTTPException(status_code=500, detail="Playback proxy is empty")
+        
+        logger.info(f"Serving proxy: {proxy_path} ({file_size} bytes)")
+        
+        # Always serve as video/mp4 since we generate MP4
+        return FileResponse(
+            proxy_path,
+            media_type="video/mp4",
+            filename=db_file.original_filename
+        )
+        
+    except Exception as e:
+        logger.error(f"Error serving video {file_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error serving video: {str(e)}")
 

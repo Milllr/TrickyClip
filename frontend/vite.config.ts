@@ -12,6 +12,11 @@ export default defineConfig({
       'localhost',
       '127.0.0.1'
     ],
+    hmr: {
+      clientPort: 443,  // Use HTTPS port for Cloudflare
+      protocol: 'wss',  // WebSocket over TLS
+      host: 'trickyclip.com'  // Your domain
+    },
     proxy: {
         '/api': {
             target: 'http://backend:8000',
