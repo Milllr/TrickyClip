@@ -5,4 +5,6 @@ from .segments import CandidateSegment, HighlightWindow
 from .clips import FinalClip
 from .jobs import Job
 from .oauth import OAuthToken
+from .locations import Location
+from .clip_people import ClipPerson
 

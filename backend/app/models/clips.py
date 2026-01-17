@@ -2,7 +2,11 @@ from datetime import datetime
 import datetime as dt
 from uuid import UUID, uuid4
 from sqlmodel import SQLModel, Field, Relationship
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .locations import Location
+
 from .segments import CandidateSegment
 from .files import OriginalFile
 from .people import Person
@@ -23,6 +27,9 @@ class FinalClip(SQLModel, table=True):
 
     trick_id: Optional[UUID] = Field(default=None, foreign_key="tricks.id", nullable=True)
     trick: Optional[Trick] = Relationship()
+    
+    location_id: Optional[UUID] = Field(default=None, foreign_key="locations.id", nullable=True)
+    location: Optional["Location"] = Relationship()
 
     category: str = Field(index=True)
     session_name: str = Field(index=True)

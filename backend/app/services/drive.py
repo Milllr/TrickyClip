@@ -172,6 +172,41 @@ class DriveService:
         else:
             raise DriveUploadError("Database session required for OAuth upload. Please authenticate at /admin/auth")
 
+    def upload_file_new_structure(
+        self, 
+        local_path: str, 
+        year: str, 
+        location_name: str,
+        day: str,
+        category_folder: str,
+        filename: str, 
+        db_session
+    ) -> dict:
+        """
+        upload file using new folder structure: YEAR / PLACE / DAY / CATEGORY
+        category_folder should be like "John_TRICKS", "John_CRASH", "MISC", or "BROLL"
+        """
+        from app.services.oauth_drive import oauth_drive_service
+        
+        if not self.service or not settings.GOOGLE_DRIVE_ROOT_FOLDER_ID:
+            print("google drive not configured, skipping upload")
+            return None
+        
+        # build new folder structure
+        year_folder_id = self._ensure_folder(settings.GOOGLE_DRIVE_ROOT_FOLDER_ID, year)
+        location_folder_id = self._ensure_folder(year_folder_id, location_name)
+        day_folder_id = self._ensure_folder(location_folder_id, day)
+        category_folder_id = self._ensure_folder(day_folder_id, category_folder)
+        
+        print(f"[DRIVE UPLOAD] new structure: {year}/{location_name}/{day}/{category_folder}/{filename}")
+        
+        return oauth_drive_service.upload_file(
+            local_path=local_path,
+            folder_id=category_folder_id,
+            filename=filename,
+            session=db_session
+        )
+    
     def move_file(self, file_id: str, target_folder_id: str):
         """moves a file to a target folder (server-side move)"""
         if not self.service:
