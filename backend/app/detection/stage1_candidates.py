@@ -144,3 +144,4 @@ def _merge_overlapping_windows(windows: List[CandidateWindow]) -> List[Candidate
     return merged
 
 
+

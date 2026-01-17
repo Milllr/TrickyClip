@@ -4,6 +4,7 @@ from app.core.db import get_session, engine
 from app.services.storage_manager import storage_manager
 from app.services.drive_sync import drive_sync
 from app.services.queue import enqueue_job
+from app.services.log_publisher import publish_log
 from pydantic import BaseModel
 from typing import Optional
 from uuid import UUID
@@ -373,6 +374,29 @@ def generate_proxy_for_file(file_id_str: str):
             import traceback
             traceback.print_exc()
             raise
+
+
+@router.post("/test-log")
+def test_log_publish():
+    """test endpoint to verify log publishing works"""
+    import random
+    from datetime import datetime
+    
+    messages = [
+        "🧪 test log message - system operational",
+        "✅ log streaming test successful",
+        "🚀 mission control systems online",
+        "📡 communications link established",
+        "⚡ all systems nominal"
+    ]
+    
+    msg = random.choice(messages)
+    publish_log('system', 'INFO', msg, {
+        'test': True,
+        'timestamp': datetime.utcnow().isoformat()
+    })
+    
+    return {"success": True, "message": f"published: {msg}"}
 
 
 @router.get("/system-stats")

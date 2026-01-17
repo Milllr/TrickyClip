@@ -7,6 +7,16 @@ ingress:
     path: /api/*
     service: http://localhost:8001
   
+  # route websocket connections to backend
+  - hostname: trickyclip.com
+    path: /ws/*
+    service: http://localhost:8001
+  
+  # route health checks to backend
+  - hostname: trickyclip.com
+    path: /health/*
+    service: http://localhost:8001
+  
   # route everything else to frontend
   - hostname: trickyclip.com
     service: http://localhost:3000

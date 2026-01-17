@@ -11,6 +11,113 @@ import os
 import subprocess
 from datetime import datetime
 from rq import get_current_job
+from uuid import UUID
+
+
+def check_and_archive_if_complete(original_file_id: UUID, session: Session) -> bool:
+    """
+    checks if a video is fully sorted and archives it if so.
+    - all segments must be reviewed (ACCEPTED or TRASHED)
+    - all clips from ACCEPTED segments must be uploaded to drive
+    returns True if archived, False otherwise
+    """
+    original = session.get(OriginalFile, original_file_id)
+    if not original:
+        print(f"[ARCHIVE CHECK] original file {original_file_id} not found")
+        return False
+    
+    # skip if already archived or no drive_file_id
+    if original.processing_status == "archived":
+        print(f"[ARCHIVE CHECK] {original.original_filename} already archived")
+        return False
+    
+    if not original.drive_file_id:
+        print(f"[ARCHIVE CHECK] {original.original_filename} has no drive_file_id, skipping")
+        return False
+    
+    # get all segments for this video
+    segments = session.exec(
+        select(CandidateSegment)
+        .where(CandidateSegment.original_file_id == original_file_id)
+    ).all()
+    
+    if not segments:
+        print(f"[ARCHIVE CHECK] {original.original_filename} has no segments")
+        return False
+    
+    # check if any segments are still unreviewed
+    unreviewed = [s for s in segments if s.status == "UNREVIEWED"]
+    if unreviewed:
+        print(f"[ARCHIVE CHECK] {original.original_filename} has {len(unreviewed)} unreviewed segments")
+        return False
+    
+    # get all accepted segment IDs
+    accepted_segment_ids = [s.id for s in segments if s.status == "ACCEPTED"]
+    
+    # if there are accepted segments, check if all clips are uploaded
+    if accepted_segment_ids:
+        clips = session.exec(
+            select(FinalClip)
+            .where(FinalClip.candidate_segment_id.in_(accepted_segment_ids))
+        ).all()
+        
+        # each accepted segment should have a clip
+        if len(clips) != len(accepted_segment_ids):
+            print(f"[ARCHIVE CHECK] {original.original_filename}: {len(clips)} clips for {len(accepted_segment_ids)} accepted segments")
+            return False
+        
+        # all clips must be uploaded
+        pending_uploads = [c for c in clips if not c.is_uploaded_to_drive]
+        if pending_uploads:
+            print(f"[ARCHIVE CHECK] {original.original_filename} has {len(pending_uploads)} clips not yet uploaded")
+            return False
+    
+    # all checks passed - video is fully sorted, archive it
+    print(f"[ARCHIVE CHECK] ✅ {original.original_filename} is fully sorted, archiving...")
+    publish_log('worker', 'INFO', f'📦 archiving fully sorted video: {original.original_filename}')
+    
+    # move to sorted archive on drive
+    archive_success = drive_sync.move_to_sorted_archive(
+        original.drive_file_id,
+        original.original_filename,
+        original.recorded_at
+    )
+    
+    if not archive_success:
+        print(f"[ARCHIVE CHECK] ⚠️ failed to move {original.original_filename} to sorted archive")
+        return False
+    
+    # delete local original file to free space
+    if os.path.exists(original.stored_path):
+        try:
+            file_size_gb = os.path.getsize(original.stored_path) / (1024**3)
+            os.remove(original.stored_path)
+            print(f"[ARCHIVE CHECK] 🗑️ deleted local file: {original.stored_path} ({file_size_gb:.2f} GB freed)")
+            publish_log('worker', 'SUCCESS', f'🗑️ freed {file_size_gb:.2f} GB by deleting local original')
+        except Exception as e:
+            print(f"[ARCHIVE CHECK] ⚠️ could not delete local file: {e}")
+    
+    # also delete the playback proxy if it exists
+    from pathlib import Path
+    proxy_filename = Path(original.stored_path).stem + "_web.mp4"
+    proxy_path = Path(settings.PLAYBACK_PROXIES_DIR) / proxy_filename
+    if proxy_path.exists():
+        try:
+            proxy_size_mb = proxy_path.stat().st_size / (1024**2)
+            proxy_path.unlink()
+            print(f"[ARCHIVE CHECK] 🗑️ deleted proxy: {proxy_path} ({proxy_size_mb:.1f} MB)")
+        except Exception as e:
+            print(f"[ARCHIVE CHECK] ⚠️ could not delete proxy: {e}")
+    
+    # update status to archived
+    original.processing_status = "archived"
+    session.add(original)
+    session.commit()
+    
+    publish_log('worker', 'SUCCESS', f'📦 {original.original_filename} archived successfully')
+    print(f"[ARCHIVE CHECK] ✅ {original.original_filename} archived successfully")
+    return True
+
 
 def analyze_original_file(file_id):
     # get current RQ job for tracking
@@ -174,12 +281,14 @@ def analyze_original_file(file_id):
             
             # if file came from drive (has drive_file_id), move to processed folder
             if hasattr(file, 'drive_file_id') and file.drive_file_id:
+                publish_log('worker', 'INFO', f'📁 moving video to processed folder on drive...')
                 print(f"moving raw video to processed folder in drive")
                 drive_sync.move_to_processed_folder(
                     file.drive_file_id,
                     file.original_filename,
                     file.recorded_at
                 )
+                publish_log('worker', 'SUCCESS', f'✅ video moved to processed/{file.recorded_at.strftime("%Y-%m-%d")}/')
             
             # NOTE: do NOT delete original file here, it is needed for sorting
             # cleanup will happen via StorageManager LRU eviction
@@ -301,6 +410,9 @@ def render_and_upload_clip(final_clip_id):
                     print(f"deleted local file: {output_path}")
                 except Exception as e:
                     print(f"warning: could not delete local file: {e}")
+                
+                # check if this video is now fully sorted and can be archived
+                check_and_archive_if_complete(clip.original_file_id, session)
             else:
                 print("⚠️ drive upload skipped (not configured)")
                 raise Exception("drive service not configured")
@@ -427,21 +539,34 @@ def download_and_process_from_drive(drive_file_id: str, filename: str, file_size
 def drive_sync_poller():
     """background worker that polls drive every 2 minutes"""
     import time
+    import shutil
     from app.services.queue import enqueue_job, queue
-    from app.services.log_publisher import publish_log
     
-    publish_log('drive-sync', 'INFO', '🔄 Drive sync poller started')
+    publish_log('drive-sync', 'SUCCESS', '🚀 drive sync poller started - monitoring drive every 2 minutes')
     print("🔄 Drive sync poller started")
     
     while True:
         try:
-            publish_log('drive-sync', 'INFO', '📡 Polling Drive dump folder...')
+            # check disk space first
+            total, used, free = shutil.disk_usage(settings.DATA_DIR)
+            free_gb = free / (1024**3)
+            percent_used = (used / total) * 100
+            
+            publish_log('drive-sync', 'INFO', f'📊 disk space: {free_gb:.2f} GB free ({percent_used:.1f}% used)', {
+                'free_gb': round(free_gb, 2),
+                'percent_used': round(percent_used, 1)
+            })
+            
+            if percent_used > 85:
+                publish_log('drive-sync', 'WARNING', f'⚠️  disk space low! {percent_used:.1f}% used - consider cleanup')
+            
+            publish_log('drive-sync', 'INFO', '📡 polling drive dump folder...')
             print("📡 Polling Drive dump folder...")
             
             videos = drive_sync.get_download_queue()
             
             if videos:
-                publish_log('drive-sync', 'SUCCESS', f'✅ Found {len(videos)} new videos', {
+                publish_log('drive-sync', 'SUCCESS', f'✅ found {len(videos)} new videos ready for download', {
                     'count': len(videos),
                     'videos': [v['name'] for v in videos]
                 })
@@ -454,11 +579,13 @@ def drive_sync_poller():
                     
                     for job in queue.jobs:
                         if job.args and len(job.args) > 0 and job.args[0] == drive_file_id:
+                            publish_log('drive-sync', 'DEBUG', f'⏭️  job already queued for {video["name"]}, skipping')
                             print(f"  ⏭️  Job already queued for {video['name']}, skipping")
                             existing_job_queued = True
                             break
                     
                     if not existing_job_queued:
+                        size_gb = int(video.get('size', 0)) / (1024**3)
                         enqueue_job(
                             download_and_process_from_drive,
                             video['id'],
@@ -466,24 +593,24 @@ def drive_sync_poller():
                             int(video.get('size', 0)),
                             timeout='2h'
                         )
-                        publish_log('drive-sync', 'INFO', f'📥 Queued download: {video["name"]}', {
+                        publish_log('drive-sync', 'INFO', f'📥 queued download: {video["name"]} ({size_gb:.2f} GB)', {
                             'filename': video['name'],
-                            'size_gb': round(int(video.get('size', 0)) / (1024**3), 2)
+                            'size_gb': round(size_gb, 2)
                         })
                         print(f"  ✅ Queued: {video['name']}")
             else:
-                publish_log('drive-sync', 'INFO', '📭 No new videos found')
+                publish_log('drive-sync', 'INFO', '📭 no new videos found in dump folder')
                 print("📭 No new videos found")
             
-            # Publish countdown every 10 seconds
+            # publish countdown every 10 seconds
             for remaining in range(120, 0, -10):
-                publish_log('drive-sync', 'DEBUG', f'⏱️  Next poll in {remaining}s', {
+                publish_log('drive-sync', 'DEBUG', f'⏱️  next poll in {remaining}s', {
                     'next_poll_seconds': remaining
                 })
                 time.sleep(10)
                 
         except Exception as e:
-            publish_log('drive-sync', 'ERROR', f'⚠️  Drive sync poll error: {str(e)}')
+            publish_log('drive-sync', 'ERROR', f'❌ drive sync error: {str(e)}')
             print(f"⚠️  Drive sync poll error: {e}")
             import traceback
             traceback.print_exc()

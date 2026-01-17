@@ -17,6 +17,7 @@ class Settings:
     GOOGLE_DRIVE_ROOT_FOLDER_ID: str = os.getenv("GOOGLE_DRIVE_ROOT_FOLDER_ID", "")  # trickyclip archive folder id
     GOOGLE_DRIVE_DUMP_FOLDER_ID: str = os.getenv("GOOGLE_DRIVE_DUMP_FOLDER_ID", "")  # dump folder where you upload raw videos
     GOOGLE_DRIVE_PROCESSED_FOLDER_ID: str = os.getenv("GOOGLE_DRIVE_PROCESSED_FOLDER_ID", "")  # processed folder for completed raw videos
+    GOOGLE_DRIVE_SORTED_ARCHIVE_FOLDER_ID: str = os.getenv("GOOGLE_DRIVE_SORTED_ARCHIVE_FOLDER_ID", "")  # sorted archive for fully reviewed videos
     
     # OAuth settings
     GOOGLE_OAUTH_CLIENT_ID: str = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")

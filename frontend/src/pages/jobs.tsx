@@ -193,6 +193,28 @@ export default function MissionControlPage() {
     }
   };
 
+  const sendTestLog = async () => {
+    try {
+      await axios.post('/api/admin/test-log');
+    } catch (e) {
+      console.error('error sending test log:', e);
+    }
+  };
+
+  const triggerCleanup = async () => {
+    if (!confirm('Run storage cleanup? This will delete uploaded clips and old files to free up space.')) {
+      return;
+    }
+    try {
+      const res = await axios.post('/api/admin/storage/cleanup');
+      alert(`Cleanup complete! Freed ${res.data.result.total_gb_freed.toFixed(2)} GB`);
+      fetchStats(); // refresh stats
+    } catch (e) {
+      console.error('error running cleanup:', e);
+      alert('Cleanup failed - check console');
+    }
+  };
+
   const getLevelColor = (level: string) => {
     switch (level) {
       case 'ERROR': return 'text-red-400 bg-red-950/50 border-l-4 border-red-500';
@@ -321,6 +343,14 @@ export default function MissionControlPage() {
                 <div className="text-xs text-gray-500 mt-2">
                   {stats.disk?.free ? formatBytes(stats.disk.free) : 'N/A'} free
                 </div>
+                {stats.disk && stats.disk.percent > 80 && (
+                  <button
+                    onClick={triggerCleanup}
+                    className="mt-2 px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded font-mono uppercase"
+                  >
+                    🧹 cleanup
+                  </button>
+                )}
               </div>
 
               <div className="bg-gradient-to-br from-purple-900/20 to-pink-900/20 border border-purple-800/50 rounded-lg p-4 text-center">
@@ -439,6 +469,12 @@ export default function MissionControlPage() {
             </div>
             
             <div className="flex gap-2">
+              <button
+                onClick={sendTestLog}
+                className="px-4 py-2 rounded-lg bg-purple-600 text-white border border-purple-500 hover:bg-purple-700 font-mono text-xs uppercase transition-all"
+              >
+                🧪 test log
+              </button>
               <button
                 onClick={() => setAutoScroll(!autoScroll)}
                 className={`px-4 py-2 rounded-lg font-mono text-xs uppercase transition-all border ${

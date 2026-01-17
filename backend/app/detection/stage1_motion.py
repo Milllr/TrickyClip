@@ -140,3 +140,4 @@ def compute_motion_energy_timeseries(
     return times_arr, energies_arr
 
 
+

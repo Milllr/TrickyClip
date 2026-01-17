@@ -15,6 +15,7 @@ class DriveSyncService:
     def __init__(self):
         self.dump_folder_id = settings.GOOGLE_DRIVE_DUMP_FOLDER_ID
         self.processed_folder_id = settings.GOOGLE_DRIVE_PROCESSED_FOLDER_ID
+        self.sorted_archive_folder_id = settings.GOOGLE_DRIVE_SORTED_ARCHIVE_FOLDER_ID
         self.min_free_space_gb = 5  # keep at least 5GB free
     
     def check_available_space(self, required_bytes: int) -> bool:
@@ -181,6 +182,57 @@ class DriveSyncService:
             import traceback
             traceback.print_exc()
     
+    def move_to_sorted_archive(self, drive_file_id: str, original_filename: str, recorded_date: datetime) -> bool:
+        """
+        move video from processed to sorted archive/{date}/ folder after all clips are sorted.
+        returns True if successful, False otherwise.
+        """
+        print(f"[ARCHIVE] starting move to sorted archive for: {original_filename}")
+        
+        if not drive_service.service:
+            print(f"[ARCHIVE] error: drive service not initialized")
+            return False
+        
+        # ensure sorted archive folder exists
+        if not self.sorted_archive_folder_id:
+            try:
+                print(f"[ARCHIVE] creating 'sorted archive' folder...")
+                self.sorted_archive_folder_id = drive_service._ensure_folder(
+                    settings.GOOGLE_DRIVE_ROOT_FOLDER_ID,
+                    "sorted archive"
+                )
+                print(f"[ARCHIVE] sorted archive folder id: {self.sorted_archive_folder_id}")
+            except Exception as e:
+                print(f"[ARCHIVE] error creating sorted archive folder: {e}")
+                import traceback
+                traceback.print_exc()
+                return False
+        
+        # create date subfolder (same structure as processed)
+        date_str = recorded_date.strftime("%Y-%m-%d")
+        print(f"[ARCHIVE] creating date subfolder: {date_str}")
+        
+        try:
+            date_folder_id = drive_service._ensure_folder(self.sorted_archive_folder_id, date_str)
+            print(f"[ARCHIVE] date folder id: {date_folder_id}")
+        except Exception as e:
+            print(f"[ARCHIVE] error creating date folder: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+        
+        # move file to sorted archive (server-side move, no rename needed since already named)
+        try:
+            print(f"[ARCHIVE] moving file to sorted archive/{date_str}/...")
+            drive_service.move_file(drive_file_id, date_folder_id)
+            print(f"[ARCHIVE] ✅ COMPLETED: moved to sorted archive/{date_str}/{original_filename}")
+            return True
+        except Exception as e:
+            print(f"[ARCHIVE] ⚠️ ERROR moving file: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
 
 # singleton instance
 drive_sync = DriveSyncService()

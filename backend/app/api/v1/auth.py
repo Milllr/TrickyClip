@@ -51,3 +51,4 @@ def google_auth_status(session: Session = Depends(get_session)):
         "needs_refresh": is_expired
     }
 
+

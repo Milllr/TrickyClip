@@ -4,3 +4,4 @@
 cd "$(dirname "$0")"
 ./deploy/deploy.sh
 
+

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select, and_
 from app.core.db import get_session
 from app.models import CandidateSegment, FinalClip, Person, Trick, OriginalFile
-from app.worker import render_and_upload_clip
+from app.worker import render_and_upload_clip, check_and_archive_if_complete
 from app.services.queue import enqueue_job
 from app.services.filenames import generate_filename
 from datetime import datetime
@@ -323,10 +323,15 @@ def trash_segment(req: TrashSegmentRequest, session: Session = Depends(get_sessi
     segment = session.get(CandidateSegment, req.segment_id)
     if not segment:
         raise HTTPException(status_code=404, detail="segment not found")
-        
+    
+    original_file_id = segment.original_file_id
     segment.status = "TRASHED"
     session.add(segment)
     session.commit()
+    
+    # check if video is now fully sorted and can be archived
+    check_and_archive_if_complete(original_file_id, session)
+    
     return {"status": "trashed"}
 
 @router.post("/skip-video")
@@ -336,12 +341,14 @@ def skip_current_video(segment_id: UUID, session: Session = Depends(get_session)
     if not segment:
         raise HTTPException(status_code=404, detail="segment not found")
     
+    original_file_id = segment.original_file_id
+    
     # trash all UNREVIEWED segments from this video
     segments_to_trash = session.exec(
         select(CandidateSegment)
         .where(
             and_(
-                CandidateSegment.original_file_id == segment.original_file_id,
+                CandidateSegment.original_file_id == original_file_id,
                 CandidateSegment.status == "UNREVIEWED"
             )
         )
@@ -352,5 +359,9 @@ def skip_current_video(segment_id: UUID, session: Session = Depends(get_session)
         session.add(seg)
     
     session.commit()
+    
+    # check if video is now fully sorted and can be archived
+    check_and_archive_if_complete(original_file_id, session)
+    
     return {"status": "skipped", "count": len(segments_to_trash)}
 

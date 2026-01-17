@@ -13,6 +13,13 @@ def on_startup():
     os.makedirs(settings.CANDIDATES_DIR, exist_ok=True)
     os.makedirs(settings.FINAL_CLIPS_DIR, exist_ok=True)
     os.makedirs(settings.PLAYBACK_PROXIES_DIR, exist_ok=True)
+    
+    # publish startup log
+    try:
+        from app.services.log_publisher import publish_log
+        publish_log('backend', 'SUCCESS', '🚀 trickyclip backend online - all systems operational')
+    except Exception as e:
+        print(f"failed to publish startup log: {e}")
 
 @app.get("/")
 def read_root():
