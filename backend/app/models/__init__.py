@@ -7,4 +7,5 @@ from .jobs import Job
 from .oauth import OAuthToken
 from .locations import Location
 from .clip_people import ClipPerson
+from .cameras import Camera
 

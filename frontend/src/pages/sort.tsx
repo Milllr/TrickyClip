@@ -33,6 +33,22 @@ interface Trick {
   category: string;
 }
 
+interface Camera {
+  id: string;
+  name: string;
+  slug: string;
+  device_type: string;
+}
+
+interface Location {
+  id: string;
+  name: string;
+  slug: string;
+  latitude: number | null;
+  longitude: number | null;
+  address: string | null;
+}
+
 export default function SortPage() {
   const [searchParams] = useSearchParams();
   const [segment, setSegment] = useState<Segment | null>(null);
@@ -49,17 +65,25 @@ export default function SortPage() {
 
   const [people, setPeople] = useState<Person[]>([]);
   const [tricks, setTricks] = useState<Trick[]>([]);
+  const [cameras, setCameras] = useState<Camera[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
   const [filteredPeople, setFilteredPeople] = useState<Person[]>([]);
   const [filteredTricks, setFilteredTricks] = useState<Trick[]>([]);
+  const [filteredLocations, setFilteredLocations] = useState<Location[]>([]);
 
   const [category, setCategory] = useState('TRICK');
   const [personSearch, setPersonSearch] = useState('');
   const [trickSearch, setTrickSearch] = useState('');
+  const [locationSearch, setLocationSearch] = useState('');
   const [selectedPerson, setSelectedPerson] = useState<string>('');
   const [selectedTrick, setSelectedTrick] = useState<string>('');
+  const [selectedCamera, setSelectedCamera] = useState<string>('');
+  const [selectedLocation, setSelectedLocation] = useState<string>('');
   const [sessionName, setSessionName] = useState('Session1');
   const [showPersonDropdown, setShowPersonDropdown] = useState(false);
   const [showTrickDropdown, setShowTrickDropdown] = useState(false);
+  const [showCameraDropdown, setShowCameraDropdown] = useState(false);
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   
   const [videoSegments, setVideoSegments] = useState<Array<{
     segment_id: string;
@@ -108,6 +132,20 @@ export default function SortPage() {
       setFilteredTricks(tricks);
     }
   }, [trickSearch, tricks]);
+  
+  useEffect(() => {
+    if (locationSearch.length > 0) {
+      const filtered = locations.filter(l => 
+        l.name.toLowerCase().includes(locationSearch.toLowerCase())
+      );
+      setFilteredLocations(filtered);
+      if (filtered.length > 0 && locationSearch.length > 0) {
+        setShowLocationDropdown(true);
+      }
+    } else {
+      setFilteredLocations(locations);
+    }
+  }, [locationSearch, locations]);
 
   useEffect(() => {
     const segmentId = searchParams.get('segment');
@@ -143,12 +181,16 @@ export default function SortPage() {
 
   const fetchMetadata = async () => {
     try {
-      const [pRes, tRes] = await Promise.all([
+      const [pRes, tRes, cRes, lRes] = await Promise.all([
         axios.get('/api/people/'),
-        axios.get('/api/tricks/')
+        axios.get('/api/tricks/'),
+        axios.get('/api/cameras/'),
+        axios.get('/api/locations/')
       ]);
       setPeople(pRes.data);
       setTricks(tRes.data);
+      setCameras(cRes.data);
+      setLocations(lRes.data);
     } catch (e) {
       console.error(e);
     }
@@ -186,8 +228,11 @@ export default function SortPage() {
       setCategory('TRICK');
       setPersonSearch('');
       setTrickSearch('');
+      setLocationSearch('');
       setSelectedPerson('');
       setSelectedTrick('');
+      setSelectedCamera('');
+      setSelectedLocation('');
       
       // autoplay after short delay
       setTimeout(() => {
@@ -231,8 +276,11 @@ export default function SortPage() {
         setCategory('TRICK');
         setPersonSearch('');
         setTrickSearch('');
+        setLocationSearch('');
         setSelectedPerson('');
         setSelectedTrick('');
+        setSelectedCamera('');
+        setSelectedLocation('');
         
         // autoplay after short delay
         setTimeout(() => {
@@ -262,6 +310,9 @@ export default function SortPage() {
         person_name: personSearch.trim() || null,
         trick_id: selectedTrick || null,
         trick_name: trickSearch.trim() || null,
+        camera_id: selectedCamera || null,
+        location_id: selectedLocation || null,
+        location_name: locationSearch.trim() || null,
         session_name: sessionName
       });
       
@@ -948,6 +999,116 @@ export default function SortPage() {
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* camera dropdown */}
+            <div className="relative">
+              <label className="block mb-2 text-sm font-semibold text-gray-300">camera</label>
+              <button
+                onClick={() => setShowCameraDropdown(!showCameraDropdown)}
+                onBlur={() => setTimeout(() => setShowCameraDropdown(false), 200)}
+                className="w-full px-3 py-2 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-white text-left flex justify-between items-center"
+              >
+                <span className={selectedCamera ? 'text-white' : 'text-gray-500'}>
+                  {selectedCamera 
+                    ? cameras.find(c => c.id === selectedCamera)?.name || 'select camera...'
+                    : 'select camera...'}
+                </span>
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {showCameraDropdown && (
+                <div className="absolute z-30 w-full mt-1 bg-gray-700 border border-gray-600 rounded max-h-48 overflow-y-auto shadow-xl">
+                  <div
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setSelectedCamera('');
+                      setShowCameraDropdown(false);
+                    }}
+                    className="px-3 py-2 hover:bg-gray-600 cursor-pointer text-gray-400 border-b border-gray-600"
+                  >
+                    (none)
+                  </div>
+                  {cameras.map(camera => (
+                    <div
+                      key={camera.id}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setSelectedCamera(camera.id);
+                        setShowCameraDropdown(false);
+                      }}
+                      className="px-3 py-2 hover:bg-gray-600 cursor-pointer text-white border-b border-gray-600 last:border-0"
+                    >
+                      <div>{camera.name}</div>
+                      <div className="text-xs text-gray-400">{camera.device_type}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* location dropdown with map preview */}
+            <div className="relative">
+              <label className="block mb-2 text-sm font-semibold text-gray-300">location</label>
+              <input
+                type="text"
+                value={locationSearch}
+                onChange={(e) => {
+                  setLocationSearch(e.target.value);
+                  setSelectedLocation('');
+                }}
+                onFocus={() => {
+                  if (filteredLocations.length > 0) {
+                    setShowLocationDropdown(true);
+                  }
+                }}
+                onBlur={() => {
+                  setTimeout(() => setShowLocationDropdown(false), 200);
+                }}
+                placeholder="type to search or add new..."
+                autoComplete="off"
+                className="w-full px-3 py-2 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500"
+              />
+              {showLocationDropdown && filteredLocations.length > 0 && (
+                <div className="absolute z-30 w-full mt-1 bg-gray-700 border border-gray-600 rounded max-h-48 overflow-y-auto shadow-xl">
+                  {filteredLocations.map(loc => (
+                    <div
+                      key={loc.id}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setSelectedLocation(loc.id);
+                        setLocationSearch(loc.name);
+                        setShowLocationDropdown(false);
+                      }}
+                      className="px-3 py-2 hover:bg-gray-600 cursor-pointer text-white border-b border-gray-600 last:border-0"
+                    >
+                      <div className="font-medium">{loc.name}</div>
+                      {loc.address && <div className="text-xs text-gray-400 truncate">{loc.address}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* map preview for selected location */}
+              {selectedLocation && (() => {
+                const loc = locations.find(l => l.id === selectedLocation);
+                if (loc?.latitude && loc?.longitude) {
+                  return (
+                    <div className="mt-2 rounded overflow-hidden border border-gray-600">
+                      <iframe
+                        width="100%"
+                        height="120"
+                        frameBorder="0"
+                        style={{ border: 0 }}
+                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${loc.longitude - 0.01},${loc.latitude - 0.01},${loc.longitude + 0.01},${loc.latitude + 0.01}&layer=mapnik&marker=${loc.latitude},${loc.longitude}`}
+                        allowFullScreen
+                      />
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
 
             {/* keyboard shortcuts */}

@@ -6,6 +6,7 @@ from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .locations import Location
+    from .cameras import Camera
 
 from .segments import CandidateSegment
 from .files import OriginalFile
@@ -30,6 +31,9 @@ class FinalClip(SQLModel, table=True):
     
     location_id: Optional[UUID] = Field(default=None, foreign_key="locations.id", nullable=True)
     location: Optional["Location"] = Relationship()
+    
+    camera_ref_id: Optional[UUID] = Field(default=None, foreign_key="cameras.id", nullable=True)
+    camera: Optional["Camera"] = Relationship()
 
     category: str = Field(index=True)
     session_name: str = Field(index=True)
@@ -37,7 +41,7 @@ class FinalClip(SQLModel, table=True):
     start_ms: int
     end_ms: int
 
-    camera_id: str = Field(index=True)
+    camera_id: str = Field(index=True)  # legacy string field, kept for backward compatibility
     fps_label: str = Field(index=True)
     resolution_label: str = Field(default="unknown", index=True)
     aspect_ratio: str = Field(default="unknown")

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from app.core.db import init_db
-from app.api.v1 import upload, sort, people, tricks, jobs, clips, health, admin, ws, auth, videos
+from app.api.v1 import upload, sort, people, tricks, jobs, clips, health, admin, ws, auth, videos, locations, cameras
 from app.core.config import settings
 import os
 
@@ -35,5 +35,7 @@ app.include_router(clips.router, prefix="/api/clips", tags=["clips"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(videos.router, prefix="/api/videos", tags=["videos"])
+app.include_router(locations.router, prefix="/api/locations", tags=["locations"])
+app.include_router(cameras.router, prefix="/api/cameras", tags=["cameras"])
 app.include_router(ws.router, prefix="/ws", tags=["websocket"])
 

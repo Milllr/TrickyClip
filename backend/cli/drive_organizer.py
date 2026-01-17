@@ -19,12 +19,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlmodel import Session, select
 from app.core.db import engine
 from app.core.config import settings
-from app.models import FinalClip, Person, Trick, Location, ClipPerson
+from app.models import FinalClip, Person, Trick, Location, ClipPerson, CandidateSegment
 from app.services.drive import drive_service
 from app.services.filenames import slugify
 from typing import Optional
 from dataclasses import dataclass
 from datetime import datetime
+from uuid import UUID
 
 
 @dataclass
@@ -309,7 +310,7 @@ class DriveOrganizer:
         print("\n" + "=" * 60)
     
     def reorganize(self, dry_run: bool = True) -> None:
-        """reorganize files to match expected structure"""
+        """reorganize files to match expected structure and update database"""
         if dry_run:
             print("\n=== DRY RUN - NO CHANGES WILL BE MADE ===\n")
         else:
@@ -327,6 +328,9 @@ class DriveOrganizer:
         
         print(f"📁 {len(wrong_path_issues)} files to reorganize\n")
         
+        success_count = 0
+        error_count = 0
+        
         with Session(engine) as session:
             for issue in wrong_path_issues:
                 print(f"moving: {issue.current_path}")
@@ -343,27 +347,46 @@ class DriveOrganizer:
                         target_folder_id = self._ensure_folder_path(folder_path)
                         
                         if target_folder_id:
-                            # move file
+                            # move file to new folder
                             self.drive.move_file(issue.drive_file_id, target_folder_id)
                             
-                            # rename if needed
+                            # rename file if needed
                             current_name = self.drive_files[issue.drive_file_id].name
                             if current_name != filename:
                                 self.drive.service.files().update(
                                     fileId=issue.drive_file_id,
                                     body={'name': filename}
                                 ).execute()
+                                print(f"    renamed: {current_name} -> {filename}")
+                            
+                            # update database with new filename
+                            if issue.clip_id:
+                                clip = session.get(FinalClip, UUID(issue.clip_id))
+                                if clip and clip.filename != filename:
+                                    clip.filename = filename
+                                    clip.updated_at = datetime.utcnow()
+                                    session.add(clip)
+                                    print(f"    📝 updated database filename")
                             
                             print("    ✅ moved successfully")
+                            success_count += 1
                         else:
                             print("    ❌ failed to create target folder")
+                            error_count += 1
                     except Exception as e:
                         print(f"    ❌ error: {e}")
+                        error_count += 1
                 
                 print()
+            
+            # commit all database changes
+            if not dry_run:
+                session.commit()
         
         if dry_run:
             print("\n💡 run with --execute to apply these changes")
+        else:
+            print(f"\n✅ reorganization complete: {success_count} succeeded, {error_count} failed")
     
     def _ensure_folder_path(self, folder_path: str) -> Optional[str]:
         """ensure folder path exists on drive, returns folder id"""
@@ -467,6 +490,67 @@ class DriveOrganizer:
                 print(f"  {clip.date} | {clip.session_name} | {clip.filename}")
             
             print(f"\n💡 run 'set-locations' to assign locations interactively")
+    
+    def queue_broken_clips_for_review(self, issue_types: list[str] = None) -> int:
+        """
+        reset broken clips to UNREVIEWED so they appear in sort queue.
+        returns count of clips queued.
+        """
+        if issue_types is None:
+            issue_types = ['missing_location', 'wrong_path', 'orphaned_db']
+        
+        queued = 0
+        clip_ids_to_queue = set()
+        
+        for issue in self.issues:
+            if issue.issue_type in issue_types and issue.clip_id:
+                clip_ids_to_queue.add(UUID(issue.clip_id))
+        
+        if not clip_ids_to_queue:
+            return 0
+        
+        with Session(engine) as session:
+            for clip_id in clip_ids_to_queue:
+                clip = session.get(FinalClip, clip_id)
+                if not clip:
+                    continue
+                
+                # find the segment and reset to UNREVIEWED
+                segment = session.get(CandidateSegment, clip.candidate_segment_id)
+                if segment and segment.status != "UNREVIEWED":
+                    segment.status = "UNREVIEWED"
+                    session.add(segment)
+                    queued += 1
+                    print(f"  ⏮️  queued: {clip.filename}")
+            
+            session.commit()
+        
+        return queued
+    
+    def auto_fix(self) -> None:
+        """run audit and automatically queue broken clips for review"""
+        print("\n=== AUTO-FIX MODE ===\n")
+        
+        # run audit first
+        self.audit()
+        self.print_audit_report()
+        
+        # filter issues that can be fixed by re-reviewing
+        fixable_issues = [
+            i for i in self.issues 
+            if i.issue_type in ['missing_location', 'wrong_path']
+        ]
+        
+        if not fixable_issues:
+            print("\n✅ no issues require re-review")
+            return
+        
+        print(f"\n🔧 queuing {len(fixable_issues)} clips for re-review...\n")
+        
+        queued = self.queue_broken_clips_for_review(['missing_location', 'wrong_path'])
+        
+        print(f"\n✅ queued {queued} clips for re-review")
+        print("   they will appear in the sort queue when you reload the sort page")
 
 
 def main():
@@ -477,7 +561,8 @@ def main():
     subparsers = parser.add_subparsers(dest="command", help="available commands")
     
     # audit command
-    subparsers.add_parser("audit", help="scan drive and report issues")
+    audit_parser = subparsers.add_parser("audit", help="scan drive and report issues")
+    audit_parser.add_argument("--auto-fix", action="store_true", help="queue broken clips for re-review")
     
     # reorganize command
     reorg_parser = subparsers.add_parser("reorganize", help="reorganize files to correct structure")
@@ -499,8 +584,11 @@ def main():
     organizer = DriveOrganizer()
     
     if args.command == "audit":
-        organizer.audit()
-        organizer.print_audit_report()
+        if args.auto_fix:
+            organizer.auto_fix()
+        else:
+            organizer.audit()
+            organizer.print_audit_report()
     
     elif args.command == "reorganize":
         dry_run = not args.execute

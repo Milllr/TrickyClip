@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select, and_
 from app.core.db import get_session
-from app.models import CandidateSegment, FinalClip, Person, Trick, OriginalFile
+from app.models import CandidateSegment, FinalClip, Person, Trick, OriginalFile, Location, Camera
 from app.worker import render_and_upload_clip, check_and_archive_if_complete
 from app.services.queue import enqueue_job
-from app.services.filenames import generate_filename
+from app.services.filenames import generate_filename, slugify
 from datetime import datetime
 from pydantic import BaseModel
 from uuid import UUID
@@ -170,6 +170,9 @@ class SaveClipRequest(BaseModel):
     person_name: Optional[str] = None  # for auto-create
     trick_id: Optional[UUID] = None
     trick_name: Optional[str] = None  # for auto-create
+    camera_id: Optional[UUID] = None  # FK to cameras table
+    location_id: Optional[UUID] = None
+    location_name: Optional[str] = None  # for auto-create
     session_name: str = "DefaultSession"
 
 @router.post("/save")
@@ -219,6 +222,30 @@ def save_clip(req: SaveClipRequest, session: Session = Depends(get_session)):
             session.add(trick)
             session.flush()
     
+    # handle location: use ID if provided, else create from name
+    location = None
+    if req.location_id:
+        location = session.get(Location, req.location_id)
+    elif req.location_name and req.location_name.strip():
+        # check if location exists by name
+        location = session.exec(
+            select(Location).where(Location.name == req.location_name.strip())
+        ).first()
+        
+        if not location:
+            # create new location
+            location = Location(
+                name=req.location_name.strip(),
+                slug=slugify(req.location_name.strip())
+            )
+            session.add(location)
+            session.flush()
+    
+    # handle camera reference
+    camera_ref = None
+    if req.camera_id:
+        camera_ref = session.get(Camera, req.camera_id)
+    
     person_slug = person.slug if person else "BROLL"
     trick_name = trick.name if trick else "BROLL"
     
@@ -257,6 +284,8 @@ def save_clip(req: SaveClipRequest, session: Session = Depends(get_session)):
         original_file_id=original.id,
         person_id=person.id if person else None,
         trick_id=trick.id if trick else None,
+        location_id=location.id if location else None,
+        camera_ref_id=camera_ref.id if camera_ref else None,
         category=req.category,
         session_name=req.session_name,
         start_ms=req.start_ms,
