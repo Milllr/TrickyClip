@@ -171,6 +171,7 @@ class SaveClipRequest(BaseModel):
     trick_id: Optional[UUID] = None
     trick_name: Optional[str] = None  # for auto-create
     camera_id: Optional[UUID] = None  # FK to cameras table
+    camera_name: Optional[str] = None  # for auto-create
     location_id: Optional[UUID] = None
     location_name: Optional[str] = None  # for auto-create
     session_name: str = "DefaultSession"
@@ -241,10 +242,35 @@ def save_clip(req: SaveClipRequest, session: Session = Depends(get_session)):
             session.add(location)
             session.flush()
     
-    # handle camera reference
+    # handle camera: use ID if provided, else create from name
     camera_ref = None
     if req.camera_id:
         camera_ref = session.get(Camera, req.camera_id)
+    elif req.camera_name and req.camera_name.strip():
+        # check if camera exists by name
+        camera_ref = session.exec(
+            select(Camera).where(Camera.name == req.camera_name.strip())
+        ).first()
+        
+        if not camera_ref:
+            # create new camera - infer device type from name
+            name_lower = req.camera_name.strip().lower()
+            if 'gopro' in name_lower:
+                device_type = 'gopro'
+            elif 'iphone' in name_lower or 'ipad' in name_lower:
+                device_type = 'iphone'
+            elif 'dji' in name_lower:
+                device_type = 'dji'
+            else:
+                device_type = 'other'
+            
+            camera_ref = Camera(
+                name=req.camera_name.strip(),
+                slug=slugify(req.camera_name.strip()),
+                device_type=device_type
+            )
+            session.add(camera_ref)
+            session.flush()
     
     person_slug = person.slug if person else "BROLL"
     trick_name = trick.name if trick else "BROLL"
