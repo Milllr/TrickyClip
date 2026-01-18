@@ -89,6 +89,14 @@ export default function SortPage() {
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [isSearchingOsm, setIsSearchingOsm] = useState(false);
   
+  // multi-person support - array of {id, name} in priority order
+  const [clipPeople, setClipPeople] = useState<Array<{id: string; name: string}>>([]);
+  const [addPersonSearch, setAddPersonSearch] = useState('');
+  const [showAddPersonDropdown, setShowAddPersonDropdown] = useState(false);
+  
+  // map coordinates for location
+  const [mapCoords, setMapCoords] = useState<{lat: number; lon: number}>({ lat: 43.0, lon: -81.25 }); // default: London, Ontario
+  
   const [videoSegments, setVideoSegments] = useState<Array<{
     segment_id: string;
     start_ms: number;
@@ -287,6 +295,8 @@ export default function SortPage() {
       setSelectedCamera('');
       setSelectedLocation('');
       setOsmResults([]);
+      setClipPeople([]);
+      setAddPersonSearch('');
       
       // autoplay after short delay
       setTimeout(() => {
@@ -337,6 +347,8 @@ export default function SortPage() {
         setSelectedCamera('');
         setSelectedLocation('');
         setOsmResults([]);
+        setClipPeople([]);
+        setAddPersonSearch('');
         
         // autoplay after short delay
         setTimeout(() => {
@@ -356,20 +368,32 @@ export default function SortPage() {
 
   const handleSave = async () => {
     if (!segment) return;
+    
+    // build people list - primary person + additional people
+    const primaryPerson = clipPeople[0];
+    const additionalPeople = clipPeople.slice(1);
+    
     try {
       await axios.post('/api/sort/save', {
         segment_id: segment.segment_id,
         start_ms: range[0],
         end_ms: range[1],
         category,
-        person_id: selectedPerson || null,
-        person_name: personSearch.trim() || null,
+        // primary person (first in list)
+        person_id: primaryPerson && !primaryPerson.id.startsWith('new:') ? primaryPerson.id : null,
+        person_name: primaryPerson?.id.startsWith('new:') ? primaryPerson.name : null,
+        // additional people (for clip_people table)
+        additional_people: additionalPeople.map(p => ({
+          id: p.id.startsWith('new:') ? null : p.id,
+          name: p.id.startsWith('new:') ? p.name : null
+        })),
         trick_id: selectedTrick || null,
         trick_name: trickSearch.trim() || null,
         camera_id: selectedCamera || null,
         camera_name: cameraSearch.trim() || null,
         location_id: selectedLocation || null,
         location_name: locationSearch.trim() || null,
+        location_coords: !selectedLocation && locationSearch ? mapCoords : null,
         session_name: sessionName
       });
       
@@ -961,14 +985,14 @@ export default function SortPage() {
 
             <div>
               <label className="block mb-2 text-sm font-semibold text-gray-300">category</label>
-              <div className="grid grid-cols-3 gap-2">
-                {['TRICK', 'BROLL', 'OTHER'].map(cat => (
+              <div className="grid grid-cols-4 gap-2">
+                {['TRICK', 'CRASH', 'BROLL', 'OTHER'].map(cat => (
                   <button
                     key={cat}
                     onClick={() => setCategory(cat)}
-                    className={`px-3 py-2 rounded font-semibold text-sm transition ${
+                    className={`px-2 py-2 rounded font-semibold text-xs transition ${
                       category === cat 
-                        ? 'bg-blue-600 text-white' 
+                        ? cat === 'CRASH' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'
                         : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                     }`}
                   >
@@ -978,43 +1002,109 @@ export default function SortPage() {
               </div>
             </div>
 
-            <div className="relative">
-              <label className="block mb-2 text-sm font-semibold text-gray-300">person</label>
-              <input
-                type="text"
-                value={personSearch}
-                onChange={(e) => {
-                  setPersonSearch(e.target.value);
-                }}
-                onFocus={() => {
-                  if (filteredPeople.length > 0) {
-                    setShowPersonDropdown(true);
-                  }
-                }}
-                onBlur={() => {
-                  setTimeout(() => setShowPersonDropdown(false), 200);
-                }}
-                placeholder="type to search..."
-                autoComplete="off"
-                className="w-full px-3 py-2 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500"
-              />
-              {showPersonDropdown && filteredPeople.length > 0 && (
-                <div className="absolute z-30 w-full mt-1 bg-gray-700 border border-gray-600 rounded max-h-48 overflow-y-auto shadow-xl">
-                  {filteredPeople.map(person => (
-                    <div
-                      key={person.id}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        setSelectedPerson(person.id);
-                        setPersonSearch(person.display_name);
-                        setShowPersonDropdown(false);
-                      }}
-                      className="px-3 py-2 hover:bg-gray-600 cursor-pointer text-white border-b border-gray-600 last:border-0"
-                    >
-                      {person.display_name}
+            {/* multi-person hierarchical list */}
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-gray-300">people in clip</label>
+              
+              {/* current people list */}
+              {clipPeople.length > 0 && (
+                <div className="space-y-1">
+                  {clipPeople.map((p, idx) => (
+                    <div key={p.id} className="flex items-center gap-2 px-2 py-1 bg-gray-700 rounded">
+                      <span className="text-xs text-gray-400 w-4">{idx + 1}.</span>
+                      <span className="flex-1 text-sm text-white">{p.name}</span>
+                      <div className="flex gap-1">
+                        {idx > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newList = [...clipPeople];
+                              [newList[idx - 1], newList[idx]] = [newList[idx], newList[idx - 1]];
+                              setClipPeople(newList);
+                            }}
+                            className="p-1 text-gray-400 hover:text-white"
+                            title="move up"
+                          >↑</button>
+                        )}
+                        {idx < clipPeople.length - 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newList = [...clipPeople];
+                              [newList[idx], newList[idx + 1]] = [newList[idx + 1], newList[idx]];
+                              setClipPeople(newList);
+                            }}
+                            className="p-1 text-gray-400 hover:text-white"
+                            title="move down"
+                          >↓</button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setClipPeople(clipPeople.filter((_, i) => i !== idx))}
+                          className="p-1 text-red-400 hover:text-red-300"
+                          title="remove"
+                        >×</button>
+                      </div>
                     </div>
                   ))}
                 </div>
+              )}
+              
+              {/* add person input */}
+              <div className="relative">
+                <input
+                  type="text"
+                  value={addPersonSearch}
+                  onChange={(e) => setAddPersonSearch(e.target.value)}
+                  onFocus={() => setShowAddPersonDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowAddPersonDropdown(false), 200)}
+                  placeholder={clipPeople.length === 0 ? "add primary person..." : "add another person..."}
+                  autoComplete="off"
+                  className="w-full px-3 py-2 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 text-sm"
+                />
+                {showAddPersonDropdown && addPersonSearch.length > 0 && (
+                  <div className="absolute z-30 w-full mt-1 bg-gray-700 border border-gray-600 rounded max-h-48 overflow-y-auto shadow-xl">
+                    {/* create new option */}
+                    {!people.some(p => p.display_name.toLowerCase() === addPersonSearch.toLowerCase()) && (
+                      <div
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setClipPeople([...clipPeople, { id: `new:${addPersonSearch}`, name: addPersonSearch }]);
+                          setAddPersonSearch('');
+                          setShowAddPersonDropdown(false);
+                        }}
+                        className="px-3 py-2 hover:bg-gray-600 cursor-pointer text-green-400 border-b border-gray-600"
+                      >
+                        + create "{addPersonSearch}"
+                      </div>
+                    )}
+                    {/* existing people filtered */}
+                    {people
+                      .filter(p => 
+                        p.display_name.toLowerCase().includes(addPersonSearch.toLowerCase()) &&
+                        !clipPeople.some(cp => cp.id === p.id)
+                      )
+                      .map(person => (
+                        <div
+                          key={person.id}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setClipPeople([...clipPeople, { id: person.id, name: person.display_name }]);
+                            setAddPersonSearch('');
+                            setShowAddPersonDropdown(false);
+                          }}
+                          className="px-3 py-2 hover:bg-gray-600 cursor-pointer text-white border-b border-gray-600 last:border-0"
+                        >
+                          {person.display_name}
+                        </div>
+                      ))
+                    }
+                  </div>
+                )}
+              </div>
+              
+              {clipPeople.length === 0 && (
+                <p className="text-xs text-gray-500">first person added = primary</p>
               )}
             </div>
 
@@ -1101,121 +1191,155 @@ export default function SortPage() {
               )}
             </div>
 
-            {/* location dropdown with OpenStreetMap autofill */}
-            <div className="relative">
-              <label className="block mb-2 text-sm font-semibold text-gray-300">location</label>
-              <input
-                type="text"
-                value={locationSearch}
-                onChange={(e) => {
-                  setLocationSearch(e.target.value);
-                  setSelectedLocation('');
-                }}
-                onFocus={() => {
-                  setShowLocationDropdown(true);
-                }}
-                onBlur={() => {
-                  setTimeout(() => setShowLocationDropdown(false), 200);
-                }}
-                placeholder="search places or type new..."
-                autoComplete="off"
-                className="w-full px-3 py-2 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500"
-              />
-              {showLocationDropdown && (filteredLocations.length > 0 || osmResults.length > 0 || isSearchingOsm) && (
-                <div className="absolute z-30 w-full mt-1 bg-gray-700 border border-gray-600 rounded max-h-64 overflow-y-auto shadow-xl">
-                  {/* saved locations */}
-                  {filteredLocations.length > 0 && (
-                    <>
-                      <div className="px-3 py-1 text-xs font-semibold text-gray-400 bg-gray-800">saved locations</div>
-                      {filteredLocations.map(loc => (
-                        <div
-                          key={loc.id}
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            setSelectedLocation(loc.id);
-                            setLocationSearch(loc.name);
-                            setShowLocationDropdown(false);
-                          }}
-                          className="px-3 py-2 hover:bg-gray-600 cursor-pointer text-white border-b border-gray-600"
-                        >
-                          <div className="font-medium flex items-center gap-2">
-                            <span className="text-green-400">📍</span> {loc.name}
-                          </div>
-                          {loc.address && <div className="text-xs text-gray-400 truncate ml-6">{loc.address}</div>}
-                        </div>
-                      ))}
-                    </>
-                  )}
-                  
-                  {/* OpenStreetMap search results */}
-                  {(osmResults.length > 0 || isSearchingOsm) && (
-                    <>
-                      <div className="px-3 py-1 text-xs font-semibold text-gray-400 bg-gray-800 flex items-center gap-2">
-                        <span>🗺️ OpenStreetMap</span>
-                        {isSearchingOsm && <span className="animate-pulse">searching...</span>}
-                      </div>
-                      {osmResults.map((result, idx) => (
-                        <div
-                          key={`osm-${idx}`}
-                          onMouseDown={async (e) => {
-                            e.preventDefault();
-                            // create location with coords from OSM result
-                            try {
-                              const res = await axios.post('/api/locations/', {
-                                name: result.name || locationSearch,
-                                latitude: result.latitude,
-                                longitude: result.longitude,
-                                address: result.address
-                              });
-                              setSelectedLocation(res.data.id);
-                              setLocationSearch(res.data.name);
-                              setLocations([...locations, res.data]);
-                            } catch (err: any) {
-                              // location might already exist, just use the name
-                              if (err.response?.status === 400) {
-                                const existing = locations.find(l => l.name.toLowerCase() === result.name.toLowerCase());
-                                if (existing) {
-                                  setSelectedLocation(existing.id);
-                                  setLocationSearch(existing.name);
-                                } else {
-                                  setLocationSearch(result.name);
-                                }
-                              }
-                            }
-                            setShowLocationDropdown(false);
-                          }}
-                          className="px-3 py-2 hover:bg-gray-600 cursor-pointer text-white border-b border-gray-600 last:border-0"
-                        >
-                          <div className="font-medium flex items-center gap-2">
-                            <span className="text-blue-400">🌐</span> {result.name}
-                          </div>
-                          <div className="text-xs text-gray-400 truncate ml-6">{result.display_name}</div>
-                        </div>
-                      ))}
-                    </>
-                  )}
+            {/* location with always-visible map */}
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-gray-300">location</label>
+              
+              {/* saved locations quick select */}
+              {locations.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {locations.slice(0, 6).map(loc => (
+                    <button
+                      key={loc.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedLocation(loc.id);
+                        setLocationSearch(loc.name);
+                        if (loc.latitude && loc.longitude) {
+                          setMapCoords({ lat: loc.latitude, lon: loc.longitude });
+                        }
+                      }}
+                      className={`px-2 py-1 text-xs rounded transition ${
+                        selectedLocation === loc.id 
+                          ? 'bg-green-600 text-white' 
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      {loc.name}
+                    </button>
+                  ))}
                 </div>
               )}
               
-              {/* map preview for selected location */}
-              {selectedLocation && (() => {
-                const loc = locations.find(l => l.id === selectedLocation);
-                if (loc?.latitude && loc?.longitude) {
-                  return (
-                    <div className="mt-2 rounded overflow-hidden border border-gray-600">
-                      <iframe
-                        width="100%"
-                        height="120"
-                        frameBorder="0"
-                        style={{ border: 0 }}
-                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${loc.longitude - 0.01},${loc.latitude - 0.01},${loc.longitude + 0.01},${loc.latitude + 0.01}&layer=mapnik&marker=${loc.latitude},${loc.longitude}`}
-                        allowFullScreen
-                      />
-                    </div>
-                  );
-                }
-                return null;
-              })()}
+              {/* search/create new location */}
+              <div className="relative">
+                <input
+                  type="text"
+                  value={locationSearch}
+                  onChange={(e) => {
+                    setLocationSearch(e.target.value);
+                    if (!locations.some(l => l.name.toLowerCase() === e.target.value.toLowerCase())) {
+                      setSelectedLocation('');
+                    }
+                  }}
+                  onFocus={() => setShowLocationDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowLocationDropdown(false), 200)}
+                  placeholder="search or type new location..."
+                  autoComplete="off"
+                  className="w-full px-3 py-2 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 text-sm"
+                />
+                {showLocationDropdown && (locationSearch.length > 0 || filteredLocations.length > 0) && (
+                  <div className="absolute z-30 w-full mt-1 bg-gray-700 border border-gray-600 rounded max-h-48 overflow-y-auto shadow-xl">
+                    {/* create new option */}
+                    {locationSearch && !locations.some(l => l.name.toLowerCase() === locationSearch.toLowerCase()) && (
+                      <div
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setSelectedLocation('');
+                          setShowLocationDropdown(false);
+                        }}
+                        className="px-3 py-2 hover:bg-gray-600 cursor-pointer text-green-400 border-b border-gray-600"
+                      >
+                        + use "{locationSearch}" as new location
+                      </div>
+                    )}
+                    
+                    {/* saved locations */}
+                    {filteredLocations.map(loc => (
+                      <div
+                        key={loc.id}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setSelectedLocation(loc.id);
+                          setLocationSearch(loc.name);
+                          if (loc.latitude && loc.longitude) {
+                            setMapCoords({ lat: loc.latitude, lon: loc.longitude });
+                          }
+                          setShowLocationDropdown(false);
+                        }}
+                        className="px-3 py-2 hover:bg-gray-600 cursor-pointer text-white border-b border-gray-600 last:border-0"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-green-400">📍</span> {loc.name}
+                        </div>
+                        {loc.address && <div className="text-xs text-gray-400 truncate ml-6">{loc.address}</div>}
+                      </div>
+                    ))}
+                    
+                    {/* OSM results */}
+                    {isSearchingOsm && (
+                      <div className="px-3 py-2 text-gray-400 text-sm">searching maps...</div>
+                    )}
+                    {osmResults.map((result, idx) => (
+                      <div
+                        key={`osm-${idx}`}
+                        onMouseDown={async (e) => {
+                          e.preventDefault();
+                          setMapCoords({ lat: result.latitude, lon: result.longitude });
+                          setLocationSearch(result.name || locationSearch);
+                          // save to database
+                          try {
+                            const res = await axios.post('/api/locations/', {
+                              name: result.name || locationSearch,
+                              latitude: result.latitude,
+                              longitude: result.longitude,
+                              address: result.address
+                            });
+                            setSelectedLocation(res.data.id);
+                            setLocations([...locations, res.data]);
+                          } catch (err: any) {
+                            if (err.response?.status === 400) {
+                              const existing = locations.find(l => l.name.toLowerCase() === result.name.toLowerCase());
+                              if (existing) {
+                                setSelectedLocation(existing.id);
+                              }
+                            }
+                          }
+                          setShowLocationDropdown(false);
+                        }}
+                        className="px-3 py-2 hover:bg-gray-600 cursor-pointer text-white border-b border-gray-600 last:border-0"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-blue-400">🌐</span> {result.name}
+                        </div>
+                        <div className="text-xs text-gray-400 truncate ml-6">{result.display_name}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              {/* always visible map */}
+              <div className="rounded overflow-hidden border border-gray-600">
+                <iframe
+                  width="100%"
+                  height="150"
+                  frameBorder="0"
+                  style={{ border: 0 }}
+                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${mapCoords.lon - 0.02},${mapCoords.lat - 0.015},${mapCoords.lon + 0.02},${mapCoords.lat + 0.015}&layer=mapnik&marker=${mapCoords.lat},${mapCoords.lon}`}
+                />
+                <div className="px-2 py-1 bg-gray-800 text-xs text-gray-400 flex justify-between">
+                  <span>{mapCoords.lat.toFixed(4)}, {mapCoords.lon.toFixed(4)}</span>
+                  <a 
+                    href={`https://www.openstreetmap.org/?mlat=${mapCoords.lat}&mlon=${mapCoords.lon}#map=15/${mapCoords.lat}/${mapCoords.lon}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-400 hover:underline"
+                  >
+                    open in maps ↗
+                  </a>
+                </div>
+              </div>
             </div>
 
             {/* keyboard shortcuts */}

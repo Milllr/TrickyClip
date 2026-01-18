@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select, and_
 from app.core.db import get_session
-from app.models import CandidateSegment, FinalClip, Person, Trick, OriginalFile, Location, Camera
+from app.models import CandidateSegment, FinalClip, Person, Trick, OriginalFile, Location, Camera, ClipPerson
 from app.worker import render_and_upload_clip, check_and_archive_if_complete
 from app.services.queue import enqueue_job
 from app.services.filenames import generate_filename, slugify
@@ -161,6 +161,14 @@ def get_segment(segment_id: str, session: Session = Depends(get_session)):
         }
     }
 
+class AdditionalPerson(BaseModel):
+    id: Optional[UUID] = None
+    name: Optional[str] = None
+
+class LocationCoords(BaseModel):
+    lat: float
+    lon: float
+
 class SaveClipRequest(BaseModel):
     segment_id: UUID
     start_ms: int
@@ -168,12 +176,14 @@ class SaveClipRequest(BaseModel):
     category: str
     person_id: Optional[UUID] = None
     person_name: Optional[str] = None  # for auto-create
+    additional_people: Optional[list[AdditionalPerson]] = None  # secondary people
     trick_id: Optional[UUID] = None
     trick_name: Optional[str] = None  # for auto-create
     camera_id: Optional[UUID] = None  # FK to cameras table
     camera_name: Optional[str] = None  # for auto-create
     location_id: Optional[UUID] = None
     location_name: Optional[str] = None  # for auto-create
+    location_coords: Optional[LocationCoords] = None  # map coordinates for new location
     session_name: str = "DefaultSession"
 
 @router.post("/save")
@@ -234,10 +244,12 @@ def save_clip(req: SaveClipRequest, session: Session = Depends(get_session)):
         ).first()
         
         if not location:
-            # create new location
+            # create new location with optional coords
             location = Location(
                 name=req.location_name.strip(),
-                slug=slugify(req.location_name.strip())
+                slug=slugify(req.location_name.strip()),
+                latitude=req.location_coords.lat if req.location_coords else None,
+                longitude=req.location_coords.lon if req.location_coords else None,
             )
             session.add(location)
             session.flush()
@@ -326,6 +338,46 @@ def save_clip(req: SaveClipRequest, session: Session = Depends(get_session)):
     )
     
     session.add(final_clip)
+    session.flush()  # get clip ID
+    
+    # add primary person to clip_people table with priority 1
+    if person:
+        primary_clip_person = ClipPerson(
+            clip_id=final_clip.id,
+            person_id=person.id,
+            priority=1
+        )
+        session.add(primary_clip_person)
+    
+    # add additional people to clip_people table with priority 2+
+    if req.additional_people:
+        priority = 2
+        for add_person in req.additional_people:
+            person_to_add = None
+            if add_person.id:
+                person_to_add = session.get(Person, add_person.id)
+            elif add_person.name and add_person.name.strip():
+                # check if exists
+                person_to_add = session.exec(
+                    select(Person).where(Person.display_name == add_person.name.strip())
+                ).first()
+                if not person_to_add:
+                    person_to_add = Person(
+                        display_name=add_person.name.strip(),
+                        slug=slugify(add_person.name.strip())
+                    )
+                    session.add(person_to_add)
+                    session.flush()
+            
+            if person_to_add:
+                clip_person = ClipPerson(
+                    clip_id=final_clip.id,
+                    person_id=person_to_add.id,
+                    priority=priority
+                )
+                session.add(clip_person)
+                priority += 1
+    
     segment.status = "ACCEPTED"
     session.add(segment)
     

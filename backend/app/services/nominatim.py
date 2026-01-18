@@ -21,10 +21,11 @@ def _rate_limit():
     _last_request_time = time.time()
 
 
-def search_places(query: str, limit: int = 5) -> list[dict]:
+def search_places(query: str, limit: int = 5, country_codes: str = "ca,us") -> list[dict]:
     """
     search for places using openstreetmap nominatim.
     returns list of results with name, lat, lon, address.
+    biased towards Canada/US by default for better local results.
     """
     _rate_limit()
     
@@ -34,6 +35,10 @@ def search_places(query: str, limit: int = 5) -> list[dict]:
         "format": "json",
         "limit": limit,
         "addressdetails": 1,
+        "countrycodes": country_codes,  # prioritize Canada and US
+        # viewbox around Ontario, Canada for local bias (southwest to northeast)
+        "viewbox": "-95.0,41.0,-74.0,56.0",
+        "bounded": 0,  # don't strictly bound, just prefer this area
     }
     headers = {
         "User-Agent": "TrickyClip/1.0 (skateboarding clip organizer)"
