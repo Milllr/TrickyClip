@@ -73,24 +73,37 @@ def generate_playback_proxy(
     """
     input_path_obj = Path(input_path)
     
-    # Always generate proxy with browser-compatible format
-    # Even if resolution is OK, codec might not be (e.g. ProRes, HEVC in .mov)
     proxy_filename = input_path_obj.stem + "_web.mp4"
     proxy_dir = Path(os.getenv("DATA_DIR", "/data")) / "playback_proxies"
     proxy_dir.mkdir(exist_ok=True)
     
     proxy_path = proxy_dir / proxy_filename
+    temp_path = proxy_dir / (input_path_obj.stem + "_web.tmp.mp4")
     
-    # Check cache
+    # check cache - but also verify the file is valid (not being written)
     if proxy_path.exists():
         try:
             source_mtime = input_path_obj.stat().st_mtime
             proxy_mtime = proxy_path.stat().st_mtime
             if proxy_mtime >= source_mtime:
-                print(f"Using cached playback proxy: {proxy_path}")
-                return str(proxy_path)
+                # verify file has valid moov atom (not still being encoded)
+                probe_cmd = ["ffprobe", "-v", "error", str(proxy_path)]
+                result = subprocess.run(probe_cmd, capture_output=True, timeout=5)
+                if result.returncode == 0:
+                    print(f"Using cached playback proxy: {proxy_path}")
+                    return str(proxy_path)
+                else:
+                    print(f"Cached proxy is invalid, regenerating...")
+                    proxy_path.unlink()
         except Exception as e:
             print(f"Cache check failed: {e}")
+    
+    # clean up any leftover temp file from previous failed conversion
+    if temp_path.exists():
+        try:
+            temp_path.unlink()
+        except:
+            pass
     
     print(f"Generating web-compatible playback proxy: {proxy_path}")
     
@@ -125,11 +138,12 @@ def generate_playback_proxy(
     if scale_filter:
         cmd.extend(["-vf", scale_filter])
     
+    # write to temp file first, then rename atomically when complete
     cmd.extend([
         "-c:v", "libx264",           # H.264 video (universally supported)
         "-profile:v", "high",        # H.264 high profile
         "-level", "4.0",             # H.264 level 4.0 (widely supported)
-        "-preset", "veryfast",       # faster encoding (changed from "medium")
+        "-preset", "veryfast",       # faster encoding
         "-crf", "23",                # quality (18=visually lossless, 23=good, 28=acceptable)
         "-pix_fmt", "yuv420p",       # pixel format for compatibility
         "-c:a", "aac",               # AAC audio (universally supported)
@@ -137,16 +151,18 @@ def generate_playback_proxy(
         "-ar", "48000",              # audio sample rate
         "-movflags", "+faststart",   # enable progressive streaming
         "-y",                        # overwrite output
-        str(proxy_path)
+        str(temp_path)               # write to temp file first
     ])
     
     try:
         print(f"Running FFmpeg command: {' '.join(cmd)}")
         result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=900)  # 15 minutes
-        print(f"✅ Playback proxy generated: {proxy_path}")
         
-        # Verify the output file exists and has size > 0
-        if proxy_path.exists() and proxy_path.stat().st_size > 0:
+        # verify temp file is valid before renaming
+        if temp_path.exists() and temp_path.stat().st_size > 0:
+            # atomic rename to final path
+            temp_path.rename(proxy_path)
+            print(f"✅ Playback proxy generated: {proxy_path}")
             print(f"   File size: {proxy_path.stat().st_size} bytes")
             return str(proxy_path)
         else:
