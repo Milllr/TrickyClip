@@ -494,12 +494,16 @@ class DriveOrganizer:
     def queue_broken_clips_for_review(self, issue_types: list[str] = None) -> int:
         """
         reset broken clips to UNREVIEWED so they appear in sort queue.
+        skips clips from archived videos (source file deleted).
         returns count of clips queued.
         """
+        from app.models import OriginalFile
+        
         if issue_types is None:
             issue_types = ['missing_location', 'wrong_path', 'orphaned_db']
         
         queued = 0
+        skipped_archived = 0
         clip_ids_to_queue = set()
         
         for issue in self.issues:
@@ -515,6 +519,12 @@ class DriveOrganizer:
                 if not clip:
                     continue
                 
+                # check if the source video is archived (file deleted)
+                original = session.get(OriginalFile, clip.original_file_id)
+                if original and original.processing_status == "archived":
+                    skipped_archived += 1
+                    continue
+                
                 # find the segment and reset to UNREVIEWED
                 segment = session.get(CandidateSegment, clip.candidate_segment_id)
                 if segment and segment.status != "UNREVIEWED":
@@ -522,6 +532,9 @@ class DriveOrganizer:
                     session.add(segment)
                     queued += 1
                     print(f"  ⏮️  queued: {clip.filename}")
+            
+            if skipped_archived > 0:
+                print(f"  ⚠️  skipped {skipped_archived} clips from archived videos (source deleted)")
             
             session.commit()
         

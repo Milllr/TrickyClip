@@ -44,10 +44,12 @@ def get_video_segments(original_file_id: str, session: Session = Depends(get_ses
 
 @router.get("/next")
 def get_next_segment(session: Session = Depends(get_session)):
-    # find UNREVIEWED segment, prioritizing high-confidence scores
+    # find UNREVIEWED segment from non-archived videos, prioritizing high-confidence scores
     statement = (
         select(CandidateSegment)
+        .join(OriginalFile)
         .where(CandidateSegment.status == "UNREVIEWED")
+        .where(OriginalFile.processing_status != "archived")  # exclude archived videos
         .order_by(CandidateSegment.confidence_score.desc())
         .limit(1)
     )
@@ -67,11 +69,12 @@ def get_next_segment(session: Session = Depends(get_session)):
     unreviewed_in_video = len([s for s in all_segments_from_video if s.status == "UNREVIEWED"])
     current_index = next((i for i, s in enumerate(all_segments_from_video) if s.id == segment.id), 0)
     
-    # count videos with unreviewed segments
+    # count videos with unreviewed segments (excluding archived)
     files_with_unreviewed = session.exec(
         select(OriginalFile.id).distinct()
         .join(CandidateSegment)
         .where(CandidateSegment.status == "UNREVIEWED")
+        .where(OriginalFile.processing_status != "archived")  # exclude archived videos
     ).all()
     
     videos_remaining = len(files_with_unreviewed)

@@ -5,6 +5,7 @@ import JobsPage from './pages/jobs';
 import ClipsPage from './pages/clips';
 import AdminAuthPage from './pages/admin-auth';
 import VideoLibraryPage from './pages/video-library';
+import ManagePage from './pages/manage';
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
             <Link to="/sort" className="hover:text-blue-600">Sort</Link>
             <Link to="/jobs" className="hover:text-blue-600">Jobs</Link>
             <Link to="/clips" className="hover:text-blue-600">Clips</Link>
+            <Link to="/manage" className="hover:text-blue-600">Manage</Link>
           </div>
         </nav>
         <main className="max-w-6xl mx-auto p-4">
@@ -28,6 +30,7 @@ function App() {
             <Route path="/sort" element={<SortPage />} />
             <Route path="/jobs" element={<JobsPage />} />
             <Route path="/clips" element={<ClipsPage />} />
+            <Route path="/manage" element={<ManagePage />} />
             <Route path="/admin/auth" element={<AdminAuthPage />} />
           </Routes>
         </main>

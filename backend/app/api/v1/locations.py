@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlmodel import Session, select
 from app.core.db import get_session
 from app.models import Location
@@ -55,7 +55,6 @@ def get_location(location_id: UUID, session: Session = Depends(get_session)):
     """get a specific location by id"""
     location = session.get(Location, location_id)
     if not location:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="location not found")
     return location
 
@@ -68,7 +67,6 @@ def create_location(loc: LocationCreate, session: Session = Depends(get_session)
     # check for duplicate
     existing = session.exec(select(Location).where(Location.slug == slug)).first()
     if existing:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="location with this slug already exists")
     
     db_loc = Location(
@@ -86,14 +84,14 @@ def create_location(loc: LocationCreate, session: Session = Depends(get_session)
 
 @router.patch("/{location_id}")
 def update_location(location_id: UUID, loc: LocationUpdate, session: Session = Depends(get_session)):
-    """update location coordinates or address"""
+    """update location name, coordinates, or address"""
     db_loc = session.get(Location, location_id)
     if not db_loc:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="location not found")
     
     if loc.name is not None:
         db_loc.name = loc.name
+        db_loc.slug = _slugify(loc.name)
     if loc.latitude is not None:
         db_loc.latitude = loc.latitude
     if loc.longitude is not None:
@@ -107,6 +105,18 @@ def update_location(location_id: UUID, loc: LocationUpdate, session: Session = D
     return db_loc
 
 
+@router.delete("/{location_id}")
+def delete_location(location_id: UUID, session: Session = Depends(get_session)):
+    """delete a location (clips will have null location_id)"""
+    location = session.get(Location, location_id)
+    if not location:
+        raise HTTPException(status_code=404, detail="location not found")
+    
+    session.delete(location)
+    session.commit()
+    return {"deleted": True, "id": str(location_id)}
+
+
 @router.post("/{location_id}/geocode")
 def geocode_location(location_id: UUID, session: Session = Depends(get_session)):
     """
@@ -115,11 +125,9 @@ def geocode_location(location_id: UUID, session: Session = Depends(get_session))
     """
     db_loc = session.get(Location, location_id)
     if not db_loc:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="location not found")
     
     if not db_loc.latitude or not db_loc.longitude:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="location must have coordinates")
     
     result = nominatim.reverse_geocode(db_loc.latitude, db_loc.longitude)

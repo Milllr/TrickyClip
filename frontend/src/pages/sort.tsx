@@ -1,6 +1,25 @@
 import React, { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { Link, useSearchParams } from 'react-router-dom';
+import { MapContainer, TileLayer, Marker, Circle, useMap } from 'react-leaflet';
+import L from 'leaflet';
+
+// fix leaflet default marker icon issue
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+});
+
+// component to recenter map when coordinates change
+function MapRecenter({ lat, lon }: { lat: number; lon: number }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView([lat, lon], map.getZoom());
+  }, [lat, lon, map]);
+  return null;
+}
 
 interface Segment {
   segment_id: string;
@@ -96,6 +115,9 @@ export default function SortPage() {
   
   // map coordinates for location
   const [mapCoords, setMapCoords] = useState<{lat: number; lon: number}>({ lat: 43.0, lon: -81.25 }); // default: London, Ontario
+  const [mapFullscreen, setMapFullscreen] = useState(false);
+  const [mapLayer, setMapLayer] = useState<'street' | 'satellite'>('street');
+  const [mapRadius, setMapRadius] = useState(100); // radius in meters
   
   const [videoSegments, setVideoSegments] = useState<Array<{
     segment_id: string;
@@ -631,6 +653,7 @@ export default function SortPage() {
             <Link to="/sort" className="block px-4 py-2 hover:bg-gray-700 bg-gray-700">sort</Link>
             <Link to="/jobs" className="block px-4 py-2 hover:bg-gray-700">jobs</Link>
             <Link to="/clips" className="block px-4 py-2 hover:bg-gray-700">clips</Link>
+            <Link to="/manage" className="block px-4 py-2 hover:bg-gray-700">manage</Link>
           </div>
         )}
       </div>
@@ -1319,16 +1342,89 @@ export default function SortPage() {
                 )}
               </div>
               
-              {/* always visible map */}
-              <div className="rounded overflow-hidden border border-gray-600">
-                <iframe
-                  width="100%"
-                  height="150"
-                  frameBorder="0"
-                  style={{ border: 0 }}
-                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${mapCoords.lon - 0.02},${mapCoords.lat - 0.015},${mapCoords.lon + 0.02},${mapCoords.lat + 0.015}&layer=mapnik&marker=${mapCoords.lat},${mapCoords.lon}`}
-                />
-                <div className="px-2 py-1 bg-gray-800 text-xs text-gray-400 flex justify-between">
+              {/* always visible map with controls */}
+              <div className={`${mapFullscreen ? 'fixed inset-0 z-[9999] bg-gray-900 p-4' : ''}`}>
+                {/* map controls */}
+                <div className={`flex items-center justify-between gap-2 mb-2 ${mapFullscreen ? '' : ''}`}>
+                  <div className="flex items-center gap-2">
+                    {/* layer toggle */}
+                    <button
+                      onClick={() => setMapLayer(mapLayer === 'street' ? 'satellite' : 'street')}
+                      className={`px-2 py-1 text-xs rounded transition ${
+                        mapLayer === 'satellite' ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'
+                      }`}
+                    >
+                      {mapLayer === 'street' ? '🛰️ satellite' : '🗺️ street'}
+                    </button>
+                    
+                    {/* radius slider */}
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-gray-400">radius:</span>
+                      <input
+                        type="range"
+                        min="50"
+                        max="500"
+                        step="50"
+                        value={mapRadius}
+                        onChange={(e) => setMapRadius(Number(e.target.value))}
+                        className="w-16 h-1 bg-gray-600 rounded appearance-none cursor-pointer"
+                      />
+                      <span className="text-xs text-gray-400 w-10">{mapRadius}m</span>
+                    </div>
+                  </div>
+                  
+                  {/* fullscreen toggle */}
+                  <button
+                    onClick={() => setMapFullscreen(!mapFullscreen)}
+                    className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded transition"
+                  >
+                    {mapFullscreen ? '✕ close' : '⛶ fullscreen'}
+                  </button>
+                </div>
+                
+                {/* leaflet map */}
+                <div className={`rounded overflow-hidden border border-gray-600 ${mapFullscreen ? 'h-[calc(100vh-120px)]' : 'h-48'}`}>
+                  <MapContainer
+                    center={[mapCoords.lat, mapCoords.lon]}
+                    zoom={15}
+                    style={{ height: '100%', width: '100%' }}
+                    scrollWheelZoom={true}
+                  >
+                    {/* tile layer - street or satellite */}
+                    {mapLayer === 'street' ? (
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+                    ) : (
+                      <TileLayer
+                        attribution='&copy; Esri'
+                        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                      />
+                    )}
+                    
+                    {/* marker at location */}
+                    <Marker position={[mapCoords.lat, mapCoords.lon]} />
+                    
+                    {/* radius circle around marker */}
+                    <Circle
+                      center={[mapCoords.lat, mapCoords.lon]}
+                      radius={mapRadius}
+                      pathOptions={{
+                        color: '#3b82f6',
+                        fillColor: '#3b82f6',
+                        fillOpacity: 0.2,
+                        weight: 2
+                      }}
+                    />
+                    
+                    {/* recenter when coords change */}
+                    <MapRecenter lat={mapCoords.lat} lon={mapCoords.lon} />
+                  </MapContainer>
+                </div>
+                
+                {/* coordinates and link */}
+                <div className="px-2 py-1 bg-gray-800 text-xs text-gray-400 flex justify-between mt-1 rounded">
                   <span>{mapCoords.lat.toFixed(4)}, {mapCoords.lon.toFixed(4)}</span>
                   <a 
                     href={`https://www.openstreetmap.org/?mlat=${mapCoords.lat}&mlon=${mapCoords.lon}#map=15/${mapCoords.lat}/${mapCoords.lon}`}

@@ -2,3 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* leaflet map styles */
+@import 'leaflet/dist/leaflet.css';
+
+/* fix leaflet z-index issues with tailwind */
+.leaflet-pane,
+.leaflet-tile,
+.leaflet-marker-icon,
+.leaflet-marker-shadow,
+.leaflet-tile-container,
+.leaflet-pane > svg,
+.leaflet-pane > canvas,
+.leaflet-zoom-box,
+.leaflet-image-layer,
+.leaflet-layer {
+  z-index: auto !important;
+}
+
