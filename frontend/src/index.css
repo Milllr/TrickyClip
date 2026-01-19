@@ -1,9 +1,9 @@
+/* leaflet map styles - must be before tailwind */
+@import 'leaflet/dist/leaflet.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* leaflet map styles */
-@import 'leaflet/dist/leaflet.css';
 
 /* fix leaflet z-index issues with tailwind */
 .leaflet-pane,
