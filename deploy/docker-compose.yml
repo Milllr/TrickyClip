@@ -59,8 +59,15 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ../frontend:/app
-      - /app/node_modules
+      # only mount source code directories, not node_modules
+      # this prevents stale dependencies after package.json changes
+      - ../frontend/src:/app/src
+      - ../frontend/public:/app/public
+      - ../frontend/index.html:/app/index.html
+      - ../frontend/vite.config.ts:/app/vite.config.ts
+      - ../frontend/tailwind.config.js:/app/tailwind.config.js
+      - ../frontend/postcss.config.js:/app/postcss.config.js
+      - ../frontend/tsconfig.json:/app/tsconfig.json
     depends_on:
       - backend
 
