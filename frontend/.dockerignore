@@ -1,0 +1,9 @@
+# never copy node_modules into docker build - npm install handles this
+node_modules/
+dist/
+.git/
+*.log
+.DS_Store
+.env
+.vite/
+

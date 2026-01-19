@@ -118,10 +118,14 @@ def get_media_info(file_id: UUID, session: Session = Depends(get_session)):
     
     return info
 
-@router.get("/media/{file_id}")
+@router.api_route("/media/{file_id}", methods=["GET", "HEAD"])
 def get_media(file_id: UUID, session: Session = Depends(get_session)):
-    """serve video file for playback (with browser-compatible proxy)"""
+    """serve video file for playback (with browser-compatible proxy)
+    
+    supports HEAD for browser preflight checks before video load
+    """
     from app.video.proxy_utils import generate_playback_proxy
+    from fastapi import Request
     import logging
     
     logger = logging.getLogger(__name__)
@@ -135,24 +139,21 @@ def get_media(file_id: UUID, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="File not found on disk")
     
     try:
-        # Generate/use playback proxy (this is synchronous and will wait)
-        logger.info(f"Generating proxy for: {db_file.stored_path}")
+        # generate/use playback proxy (this is synchronous and will wait)
         proxy_path = generate_playback_proxy(db_file.stored_path, max_height=1080)
         
-        # Verify proxy exists
+        # verify proxy exists
         if not os.path.exists(proxy_path):
             logger.error(f"Proxy generation failed, file doesn't exist: {proxy_path}")
             raise HTTPException(status_code=500, detail="Failed to generate playback proxy")
         
-        # Verify proxy has content
+        # verify proxy has content
         file_size = os.path.getsize(proxy_path)
         if file_size == 0:
             logger.error(f"Proxy file is empty: {proxy_path}")
             raise HTTPException(status_code=500, detail="Playback proxy is empty")
         
-        logger.info(f"Serving proxy: {proxy_path} ({file_size} bytes)")
-        
-        # Always serve as video/mp4 since we generate MP4
+        # always serve as video/mp4 since we generate MP4
         return FileResponse(
             proxy_path,
             media_type="video/mp4",
