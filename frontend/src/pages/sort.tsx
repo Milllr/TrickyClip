@@ -81,6 +81,7 @@ export default function SortPage() {
   const [currentTime, setCurrentTime] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [showMenu, setShowMenu] = useState(false);
+  const [videoError, setVideoError] = useState<string | null>(null);
 
   const [people, setPeople] = useState<Person[]>([]);
   const [tricks, setTricks] = useState<Trick[]>([]);
@@ -295,6 +296,7 @@ export default function SortPage() {
 
   const loadSegmentById = async (segmentId: string) => {
     setLoading(true);
+    setVideoError(null);
     try {
       const res = await axios.get(`/api/sort/segment/${segmentId}`);
       setSegment(res.data);
@@ -338,6 +340,7 @@ export default function SortPage() {
 
   const fetchNext = async () => {
     setLoading(true);
+    setVideoError(null);
     try {
       const res = await axios.get('/api/sort/next');
       if (!res || !res.data) {
@@ -661,13 +664,34 @@ export default function SortPage() {
       <div className="h-full flex flex-col md:flex-row pt-16 md:pt-0">
         {/* video player */}
         <div className="flex-1 flex flex-col items-center justify-center bg-black p-4">
-          <video
-            ref={videoRef}
-            src={`/api/upload/media/${segment.original_file.id}`}
-            className="max-w-full max-h-full rounded shadow-2xl"
-            onTimeUpdate={handleVideoTimeUpdate}
-            onEnded={() => setIsPlaying(false)}
-          />
+          {videoError ? (
+            <div className="text-center p-8 bg-gray-800 rounded-lg">
+              <div className="text-red-400 text-lg mb-4">⚠️ video unavailable</div>
+              <div className="text-gray-400 text-sm mb-4">{videoError}</div>
+              <button
+                onClick={() => {
+                  setVideoError(null);
+                  fetchNext();
+                }}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white"
+              >
+                skip to next clip
+              </button>
+            </div>
+          ) : (
+            <video
+              ref={videoRef}
+              src={`/api/upload/media/${segment.original_file.id}`}
+              className="max-w-full max-h-full rounded shadow-2xl"
+              onTimeUpdate={handleVideoTimeUpdate}
+              onEnded={() => setIsPlaying(false)}
+              onError={(e) => {
+                console.error('video load error:', e);
+                setVideoError('this video file could not be loaded. it may have been archived or deleted.');
+                setIsPlaying(false);
+              }}
+            />
+          )}
           
           {/* clips list for current video */}
           {videoSegments.length > 0 && (
@@ -689,6 +713,7 @@ export default function SortPage() {
                         : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
                     }`}
                     onClick={async () => {
+                      setVideoError(null);
                       try {
                         const res = await axios.get(`/api/sort/segment/${seg.segment_id}`);
                         setSegment(res.data);
