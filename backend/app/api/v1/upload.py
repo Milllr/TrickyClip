@@ -153,11 +153,12 @@ def get_media(file_id: UUID, session: Session = Depends(get_session)):
             logger.error(f"Proxy file is empty: {proxy_path}")
             raise HTTPException(status_code=500, detail="Playback proxy is empty")
         
-        # always serve as video/mp4 since we generate MP4
+        # serve as inline video for browser playback
+        # use content_disposition_type="inline" to stream instead of download
         return FileResponse(
             proxy_path,
             media_type="video/mp4",
-            filename=db_file.original_filename
+            content_disposition_type="inline"
         )
         
     except Exception as e:
