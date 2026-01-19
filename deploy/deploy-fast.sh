@@ -1,16 +1,18 @@
 #!/bin/bash
-# quick deployment that skips migrations (for emergency deploys)
+# fast code-only deployment (15-30 seconds)
+# use this for code changes that don't modify package.json or Dockerfile
+# for dependency changes, use deploy-full.sh instead
 
-cd "$(dirname "$0")"
-
-echo "🚀 Emergency deploy (skipping migrations)..."
+set -e
 
 REMOTE_USER="kahuna"
 REMOTE_HOST="trickyclip-server"
 ZONE="us-central1-c"
 REMOTE_DIR="/opt/trickyclip"
 
-# sync code using rsync (fast incremental)
+echo "⚡ fast deploy starting..."
+
+# sync only source code (rsync is incremental - only changed files)
 echo "📦 syncing code..."
 rsync -avz --delete \
     --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' \
@@ -24,21 +26,14 @@ rsync -avz --delete \
     -e "gcloud compute ssh ${REMOTE_USER}@${REMOTE_HOST} --zone=${ZONE} --" \
     frontend/ :${REMOTE_DIR}/frontend/ &
 
-rsync -avz --delete \
-    --exclude='.git' \
-    -e "gcloud compute ssh ${REMOTE_USER}@${REMOTE_HOST} --zone=${ZONE} --" \
-    deploy/ :${REMOTE_DIR}/deploy/ &
+wait  # wait for both rsync to finish
 
-wait  # wait for all rsync to finish
-
-# rebuild containers
-echo "🔨 rebuilding containers..."
+# restart containers (no rebuild)
+echo "🔄 restarting..."
 gcloud compute ssh ${REMOTE_USER}@${REMOTE_HOST} --zone=${ZONE} --command="
     cd ${REMOTE_DIR}/deploy
-    docker compose up -d --build --no-deps backend frontend worker drive-sync-worker
+    docker compose restart backend frontend worker
 "
 
-echo "✅ deployed! skipped migrations."
-echo "🌐 check: https://trickyclip.com/jobs"
-
+echo "✅ done! https://trickyclip.com"
 

@@ -1,0 +1,12 @@
+# exclude from gcloud scp uploads
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.env
+*.log
+.DS_Store
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+

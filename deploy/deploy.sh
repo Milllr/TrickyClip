@@ -1,6 +1,6 @@
 #!/bin/bash
 # trickyclip deployment script
-# uploads code changes, runs migrations, and restarts services with zero downtime
+# uses rsync for fast incremental uploads, runs migrations, and restarts services
 
 set -e  # exit on error
 
@@ -15,40 +15,54 @@ echo "🚀 starting trickyclip deployment..."
 echo "🧹 cleaning local cache..."
 find backend -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find backend -name "*.pyc" -delete 2>/dev/null || true
-find frontend -name "node_modules" -prune -o -type f -name ".DS_Store" -delete 2>/dev/null || true
 
-# step 1b: upload code changes
-echo "📦 uploading backend code..."
-gcloud compute scp --recurse backend/ ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/ --zone=${ZONE}
+# step 2: sync code using rsync (incremental - only changed files)
+echo "📦 syncing backend code..."
+rsync -avz --delete \
+    --exclude='__pycache__' \
+    --exclude='*.pyc' \
+    --exclude='.env' \
+    --exclude='.git' \
+    --exclude='*.log' \
+    -e "gcloud compute ssh ${REMOTE_USER}@${REMOTE_HOST} --zone=${ZONE} --" \
+    backend/ :${REMOTE_DIR}/backend/
 
-echo "📦 uploading frontend code..."
-gcloud compute scp --recurse frontend/ ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/ --zone=${ZONE}
+echo "📦 syncing frontend code..."
+rsync -avz --delete \
+    --exclude='node_modules' \
+    --exclude='.git' \
+    --exclude='dist' \
+    --exclude='.vite' \
+    --exclude='*.log' \
+    -e "gcloud compute ssh ${REMOTE_USER}@${REMOTE_HOST} --zone=${ZONE} --" \
+    frontend/ :${REMOTE_DIR}/frontend/
 
-echo "📦 uploading deploy configs..."
-gcloud compute scp --recurse deploy/ ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/ --zone=${ZONE}
+echo "📦 syncing deploy configs..."
+rsync -avz --delete \
+    --exclude='.git' \
+    -e "gcloud compute ssh ${REMOTE_USER}@${REMOTE_HOST} --zone=${ZONE} --" \
+    deploy/ :${REMOTE_DIR}/deploy/
 
-# step 2: run database migrations with alembic
+# step 3: run database migrations with alembic
 echo "🗄️  running database migrations..."
 gcloud compute ssh ${REMOTE_USER}@${REMOTE_HOST} --zone=${ZONE} --command="
     cd ${REMOTE_DIR}/deploy
     docker compose exec -T backend alembic upgrade head
 "
 
-# step 3: rebuild and restart services
-echo "🔨 rebuilding containers..."
+# step 4: restart services (no rebuild for code-only changes)
+echo "🔄 restarting containers..."
 gcloud compute ssh ${REMOTE_USER}@${REMOTE_HOST} --zone=${ZONE} --command="
     cd ${REMOTE_DIR}/deploy
-    docker compose up -d --build --no-deps backend frontend worker
+    docker compose restart backend frontend worker
 "
 
-# step 4: verify services are running
+# step 5: verify services are running
 echo "✅ verifying services..."
 gcloud compute ssh ${REMOTE_USER}@${REMOTE_HOST} --zone=${ZONE} --command="
     cd ${REMOTE_DIR}/deploy
     docker compose ps
-    docker compose logs backend --tail=20
 "
 
 echo "✨ deployment complete!"
 echo "🌐 visit https://trickyclip.com to verify"
-

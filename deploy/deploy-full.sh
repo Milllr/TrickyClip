@@ -1,16 +1,17 @@
 #!/bin/bash
-# quick deployment that skips migrations (for emergency deploys)
+# full deployment with Docker rebuild (1-2 minutes)
+# use this when package.json, Dockerfile, or dependencies change
 
-cd "$(dirname "$0")"
-
-echo "🚀 Emergency deploy (skipping migrations)..."
+set -e
 
 REMOTE_USER="kahuna"
 REMOTE_HOST="trickyclip-server"
 ZONE="us-central1-c"
 REMOTE_DIR="/opt/trickyclip"
 
-# sync code using rsync (fast incremental)
+echo "🔨 full rebuild deploy starting..."
+
+# sync all code
 echo "📦 syncing code..."
 rsync -avz --delete \
     --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' \
@@ -31,14 +32,26 @@ rsync -avz --delete \
 
 wait  # wait for all rsync to finish
 
-# rebuild containers
+# run migrations
+echo "🗄️  running migrations..."
+gcloud compute ssh ${REMOTE_USER}@${REMOTE_HOST} --zone=${ZONE} --command="
+    cd ${REMOTE_DIR}/deploy
+    docker compose exec -T backend alembic upgrade head 2>/dev/null || true
+"
+
+# full rebuild with fresh npm install
 echo "🔨 rebuilding containers..."
 gcloud compute ssh ${REMOTE_USER}@${REMOTE_HOST} --zone=${ZONE} --command="
     cd ${REMOTE_DIR}/deploy
-    docker compose up -d --build --no-deps backend frontend worker drive-sync-worker
+    docker compose up -d --build --force-recreate backend frontend worker
 "
 
-echo "✅ deployed! skipped migrations."
-echo "🌐 check: https://trickyclip.com/jobs"
+# verify
+echo "✅ verifying..."
+gcloud compute ssh ${REMOTE_USER}@${REMOTE_HOST} --zone=${ZONE} --command="
+    cd ${REMOTE_DIR}/deploy
+    docker compose ps
+"
 
+echo "✨ full rebuild complete! https://trickyclip.com"
 
