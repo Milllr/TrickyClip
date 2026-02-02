@@ -209,7 +209,6 @@ def save_clip(req: SaveClipRequest, session: Session = Depends(get_session)):
         
         if not person:
             # create new person
-            from app.services.filenames import slugify
             person = Person(
                 display_name=req.person_name.strip(),
                 slug=slugify(req.person_name.strip())
@@ -474,4 +473,3 @@ def skip_current_video(segment_id: UUID, session: Session = Depends(get_session)
     check_and_archive_if_complete(original_file_id, session)
     
     return {"status": "skipped", "count": len(segments_to_trash)}
-

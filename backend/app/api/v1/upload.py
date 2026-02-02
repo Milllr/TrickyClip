@@ -164,4 +164,3 @@ def get_media(file_id: UUID, session: Session = Depends(get_session)):
     except Exception as e:
         logger.error(f"Error serving video {file_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error serving video: {str(e)}")
-

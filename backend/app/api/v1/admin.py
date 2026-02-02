@@ -22,13 +22,86 @@ def get_storage_stats():
 
 @router.post("/storage/cleanup")
 def trigger_cleanup(request: CleanupRequest):
-    """trigger storage cleanup routine"""
+    """
+    Trigger smart storage cleanup.
+    Deletes videos where ALL segments have been reviewed (accepted or trashed).
+    This frees up space while keeping videos you're still sorting.
+    """
+    from app.models import OriginalFile, CandidateSegment
+    import os
+    
     try:
-        result = storage_manager.run_cleanup(aggressive=request.aggressive)
+        deleted_count = 0
+        space_freed = 0
+        skipped = []
+        
+        with Session(engine) as session:
+            files = session.exec(select(OriginalFile)).all()
+            
+            for file in files:
+                # Check if file exists on disk
+                if not os.path.exists(file.stored_path):
+                    continue
+                
+                # Get all segments for this video
+                segments = session.exec(
+                    select(CandidateSegment).where(CandidateSegment.original_file_id == file.id)
+                ).all()
+                
+                if len(segments) == 0:
+                    # No segments = not analyzed yet, skip
+                    skipped.append(f"{file.original_filename} (no segments)")
+                    continue
+                
+                # Check if ALL segments are reviewed
+                unreviewed = [s for s in segments if s.status == "UNREVIEWED"]
+                
+                if len(unreviewed) > 0:
+                    # Still has unreviewed segments, skip
+                    skipped.append(f"{file.original_filename} ({len(unreviewed)} unreviewed)")
+                    continue
+                
+                # Safe to delete - all segments reviewed
+                file_size = os.path.getsize(file.stored_path)
+                
+                try:
+                    os.remove(file.stored_path)
+                    deleted_count += 1
+                    space_freed += file_size
+                    print(f"🗑️  Deleted: {file.original_filename} ({file_size / (1024**3):.2f} GB)")
+                    
+                    # Update status in database
+                    file.processing_status = "archived"
+                    session.add(file)
+                    
+                except Exception as e:
+                    print(f"⚠️  Failed to delete {file.original_filename}: {e}")
+            
+            session.commit()
+        
+        # Also clean proxy caches if aggressive
+        if request.aggressive:
+            import shutil
+            from pathlib import Path
+            
+            proxies_dir = Path(os.getenv("DATA_DIR", "/data")) / "proxies"
+            playback_proxies_dir = Path(os.getenv("DATA_DIR", "/data")) / "playback_proxies"
+            
+            if proxies_dir.exists():
+                shutil.rmtree(proxies_dir)
+                os.makedirs(proxies_dir)
+                print("🗑️  Cleaned analysis proxy cache")
+            
+            # Don't delete ALL playback proxies, just regenerate on demand
+        
         return {
             "success": True,
-            "result": result
+            "deleted_files": deleted_count,
+            "space_freed_gb": round(space_freed / (1024**3), 2),
+            "skipped": len(skipped),
+            "message": f"Deleted {deleted_count} fully-sorted videos, freed {space_freed / (1024**3):.2f} GB"
         }
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
