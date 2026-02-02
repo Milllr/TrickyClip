@@ -206,9 +206,9 @@ export default function MissionControlPage() {
       return;
     }
     try {
-      const res = await axios.post('/api/admin/storage/cleanup');
-      alert(`Cleanup complete! Freed ${res.data.result.total_gb_freed.toFixed(2)} GB`);
-      fetchStats(); // refresh stats
+      const res = await axios.post('/api/admin/storage/cleanup', { aggressive: false });
+      alert(`Cleanup complete! Freed ${res.data.space_freed_gb} GB`);
+      fetchStats();
     } catch (e) {
       console.error('error running cleanup:', e);
       alert('Cleanup failed - check console');
