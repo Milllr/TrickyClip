@@ -49,21 +49,32 @@ export default function MissionControlPage() {
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // websocket connection with auto-reconnect
+  // uses isMounted ref to handle react strictmode double-mount
   useEffect(() => {
+    let isMounted = true;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let currentAttempts = 0;
+    
     const connectWebSocket = () => {
+      if (!isMounted) return;
+      
       try {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const ws = new WebSocket(`${protocol}//${window.location.host}/ws/logs`);
         
         ws.onopen = () => {
+          if (!isMounted) {
+            ws.close();
+            return;
+          }
           console.log('🔌 log stream connected');
           setWsConnected(true);
+          currentAttempts = 0;
           setWsReconnectAttempts(0);
           
-          // add connection success log
           setLogs(prev => [...prev, {
             timestamp: new Date().toISOString(),
             source: 'system',
@@ -74,17 +85,16 @@ export default function MissionControlPage() {
         };
         
         ws.onmessage = (event) => {
+          if (!isMounted) return;
           try {
             const log = JSON.parse(event.data);
             
-            // update countdown if available
             if (log.metadata?.next_poll_seconds !== undefined) {
               setNextPollSeconds(log.metadata.next_poll_seconds);
             }
             
             setLogs(prev => {
               const newLogs = [...prev, log];
-              // keep last 500 logs
               return newLogs.slice(-500);
             });
           } catch (e) {
@@ -92,16 +102,17 @@ export default function MissionControlPage() {
           }
         };
         
-        ws.onerror = (error) => {
-          console.error('websocket error:', error);
+        ws.onerror = () => {
+          if (!isMounted) return;
           setWsConnected(false);
         };
         
         ws.onclose = () => {
+          if (!isMounted) return;
+          
           console.log('🔌 log stream disconnected');
           setWsConnected(false);
           
-          // add disconnection log
           setLogs(prev => [...prev, {
             timestamp: new Date().toISOString(),
             source: 'system',
@@ -110,29 +121,31 @@ export default function MissionControlPage() {
             metadata: {}
           }]);
           
-          // attempt reconnect with exponential backoff
-          const attempts = wsReconnectAttempts;
-          const delay = Math.min(1000 * Math.pow(2, attempts), 30000); // max 30s
-          setWsReconnectAttempts(attempts + 1);
+          const delay = Math.min(1000 * Math.pow(2, currentAttempts), 30000);
+          currentAttempts += 1;
+          setWsReconnectAttempts(currentAttempts);
           
-          reconnectTimeoutRef.current = setTimeout(() => {
-            console.log(`reconnecting... (attempt ${attempts + 1})`);
-            connectWebSocket();
+          reconnectTimeout = setTimeout(() => {
+            if (isMounted) {
+              console.log(`reconnecting... (attempt ${currentAttempts})`);
+              connectWebSocket();
+            }
           }, delay);
         };
         
         wsRef.current = ws;
       } catch (e) {
         console.error('failed to create websocket:', e);
-        setWsConnected(false);
+        if (isMounted) setWsConnected(false);
       }
     };
 
     connectWebSocket();
 
     return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
+      isMounted = false;
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
       }
       if (wsRef.current) {
         wsRef.current.close();

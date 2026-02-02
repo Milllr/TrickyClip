@@ -216,21 +216,28 @@ export default function ClipsPage() {
           {clips.map(clip => (
             <div key={clip.id} className="bg-white rounded-lg shadow-lg hover:shadow-xl transition overflow-hidden">
               <div className="aspect-video bg-gray-900 relative group">
-                {clip.drive_url ? (
+                {clip.original_file_id ? (
                   <>
-                    <iframe
-                      src={`https://drive.google.com/file/d/${clip.drive_url.split('/d/')[1]?.split('/')[0]}/preview`}
-                      className="w-full h-full"
-                      allow="autoplay"
+                    <video
+                      src={`/api/upload/media/${clip.original_file_id}#t=${clip.start_ms / 1000},${clip.end_ms / 1000}`}
+                      className="w-full h-full object-contain"
+                      controls
+                      preload="metadata"
+                      onLoadedMetadata={(e) => {
+                        const video = e.target as HTMLVideoElement;
+                        video.currentTime = clip.start_ms / 1000;
+                      }}
                     />
-                    <a 
-                      href={clip.drive_url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="absolute top-2 right-2 bg-black bg-opacity-70 text-white px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition"
-                    >
-                      open in drive →
-                    </a>
+                    {clip.drive_url && (
+                      <a 
+                        href={clip.drive_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="absolute top-2 right-2 bg-black bg-opacity-70 text-white px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition"
+                      >
+                        open in drive →
+                      </a>
+                    )}
                   </>
                 ) : (
                   <div className="flex items-center justify-center h-full text-white text-sm">

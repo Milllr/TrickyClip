@@ -661,9 +661,9 @@ export default function SortPage() {
         )}
       </div>
 
-      <div className="h-full flex flex-col md:flex-row pt-16 md:pt-0">
+      <div className="h-full flex flex-col lg:flex-row pt-16 lg:pt-0">
         {/* video player */}
-        <div className="flex-1 flex flex-col items-center justify-center bg-black p-4">
+        <div className="flex-1 flex flex-col items-center justify-center bg-black p-2 lg:p-4 min-h-[40vh] lg:min-h-0">
           {videoError ? (
             <div className="text-center p-8 bg-gray-800 rounded-lg">
               <div className="text-red-400 text-lg mb-4">⚠️ video unavailable</div>
@@ -749,9 +749,9 @@ export default function SortPage() {
         </div>
 
         {/* sidebar controls */}
-        <div className="w-full md:w-96 flex flex-col bg-gray-800 border-t md:border-t-0 md:border-l border-gray-700">
+        <div className="w-full lg:w-96 xl:w-[420px] flex flex-col bg-gray-800 border-t lg:border-t-0 lg:border-l border-gray-700 max-h-[60vh] lg:max-h-full overflow-y-auto lg:overflow-y-visible">
           {/* timeline scrubber */}
-          <div className="p-4 border-b border-gray-700">
+          <div className="p-3 lg:p-4 border-b border-gray-700">
             <div className="mb-2 flex justify-between text-xs text-gray-400">
               <span>{formatTime(range[0])}</span>
               <span className="font-bold text-white">{formatTime(range[1] - range[0])}</span>
@@ -760,7 +760,7 @@ export default function SortPage() {
             
             <div 
               ref={timelineRef}
-              className="relative h-20 bg-gray-700 rounded cursor-crosshair touch-none"
+              className="relative h-14 lg:h-20 bg-gray-700 rounded cursor-crosshair touch-none"
               onClick={(e) => {
                 if (isDragging || !videoRef.current || !timelineRef.current) return;
                 const rect = timelineRef.current.getBoundingClientRect();
@@ -863,14 +863,14 @@ export default function SortPage() {
             </div>
 
             {/* speed controls */}
-            <div className="mt-3">
-              <label className="block mb-2 text-xs font-semibold text-gray-400">playback speed: {playbackSpeed}x</label>
+            <div className="mt-2 lg:mt-3">
+              <label className="block mb-1 lg:mb-2 text-xs font-semibold text-gray-400">speed: {playbackSpeed}x</label>
               <div className="flex gap-1 flex-wrap">
                 {speedOptions.map(speed => (
                   <button
                     key={speed}
                     onClick={() => setPlaybackSpeed(speed)}
-                    className={`px-2 py-1 text-xs rounded font-medium transition ${
+                    className={`px-1.5 lg:px-2 py-1 text-xs rounded font-medium transition ${
                       playbackSpeed === speed
                         ? 'bg-blue-600 text-white'
                         : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
@@ -883,20 +883,20 @@ export default function SortPage() {
             </div>
 
             {/* precision trim controls */}
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="mt-2 lg:mt-3 grid grid-cols-2 gap-2">
               <div>
                 <label className="block mb-1 text-xs font-semibold text-gray-400">cut in</label>
                 <div className="flex gap-1">
                   <button
                     onClick={() => adjustStartTime(-1000)}
-                    className="flex-1 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
+                    className="flex-1 px-1.5 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
                     title="subtract 1 second from start"
                   >
                     -1s
                   </button>
                   <button
                     onClick={() => adjustStartTime(1000)}
-                    className="flex-1 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
+                    className="flex-1 px-1.5 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
                     title="add 1 second to start"
                   >
                     +1s
@@ -908,14 +908,14 @@ export default function SortPage() {
                 <div className="flex gap-1">
                   <button
                     onClick={() => adjustEndTime(-1000)}
-                    className="flex-1 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
+                    className="flex-1 px-1.5 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
                     title="subtract 1 second from end"
                   >
                     -1s
                   </button>
                   <button
                     onClick={() => adjustEndTime(1000)}
-                    className="flex-1 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
+                    className="flex-1 px-1.5 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
                     title="add 1 second to end"
                   >
                     +1s
@@ -924,10 +924,10 @@ export default function SortPage() {
               </div>
             </div>
             
-            {/* clip metadata */}
-            <div className="mt-4 p-3 bg-gray-900 rounded border border-gray-700">
-              <div className="text-xs font-semibold text-gray-400 mb-2">clip details</div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            {/* clip metadata - collapsible on mobile */}
+            <details className="mt-2 lg:mt-4 bg-gray-900 rounded border border-gray-700">
+              <summary className="p-2 lg:p-3 text-xs font-semibold text-gray-400 cursor-pointer">clip details</summary>
+              <div className="px-2 lg:px-3 pb-2 lg:pb-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                 <div className="text-gray-500">camera:</div>
                 <div className="text-gray-300">{segment.original_file.camera_id || 'unknown'}</div>
                 
@@ -968,12 +968,12 @@ export default function SortPage() {
                   {segment.detection_method || 'unknown'}
                 </div>
               </div>
-            </div>
+            </details>
           </div>
 
           {/* clip navigator */}
           {segment.video_context && (
-            <div className="p-4 bg-gray-900 border-b border-gray-700">
+            <div className="p-3 lg:p-4 bg-gray-900 border-b border-gray-700">
               <div className="flex justify-between items-center mb-2">
                 <div className="text-xs font-semibold text-gray-400">video progress</div>
                 <div className="text-xs text-gray-400">
@@ -1001,9 +1001,9 @@ export default function SortPage() {
           )}
 
           {/* form fields */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 overflow-y-auto p-3 lg:p-4 space-y-3 lg:space-y-4">
             <div className="relative">
-              <label className="block mb-2 text-sm font-semibold text-gray-300">session name</label>
+              <label className="block mb-1 lg:mb-2 text-sm font-semibold text-gray-300">session name</label>
               <input
                 type="text"
                 value={sessionName}
@@ -1032,13 +1032,13 @@ export default function SortPage() {
             </div>
 
             <div>
-              <label className="block mb-2 text-sm font-semibold text-gray-300">category</label>
-              <div className="grid grid-cols-4 gap-2">
+              <label className="block mb-1 lg:mb-2 text-sm font-semibold text-gray-300">category</label>
+              <div className="grid grid-cols-4 gap-1.5 lg:gap-2">
                 {['TRICK', 'CRASH', 'BROLL', 'OTHER'].map(cat => (
                   <button
                     key={cat}
                     onClick={() => setCategory(cat)}
-                    className={`px-2 py-2 rounded font-semibold text-xs transition ${
+                    className={`px-1.5 lg:px-2 py-1.5 lg:py-2 rounded font-semibold text-xs transition ${
                       category === cat 
                         ? cat === 'CRASH' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'
                         : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
@@ -1367,24 +1367,25 @@ export default function SortPage() {
                 )}
               </div>
               
-              {/* always visible map with controls */}
-              <div className={`${mapFullscreen ? 'fixed inset-0 z-[9999] bg-gray-900 p-4' : ''}`}>
+              {/* map - collapsible on mobile */}
+              <details className={`${mapFullscreen ? 'fixed inset-0 z-[9999] bg-gray-900 p-4' : ''}`} open>
+                <summary className="text-xs font-semibold text-gray-400 cursor-pointer mb-2 lg:hidden">📍 map (tap to toggle)</summary>
                 {/* map controls */}
                 <div className={`flex items-center justify-between gap-2 mb-2 ${mapFullscreen ? '' : ''}`}>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 lg:gap-2 flex-wrap">
                     {/* layer toggle */}
                     <button
                       onClick={() => setMapLayer(mapLayer === 'street' ? 'satellite' : 'street')}
-                      className={`px-2 py-1 text-xs rounded transition ${
+                      className={`px-1.5 lg:px-2 py-1 text-xs rounded transition ${
                         mapLayer === 'satellite' ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'
                       }`}
                     >
-                      {mapLayer === 'street' ? '🛰️ satellite' : '🗺️ street'}
+                      {mapLayer === 'street' ? '🛰️' : '🗺️'}
                     </button>
                     
-                    {/* radius slider */}
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs text-gray-400">radius:</span>
+                    {/* radius slider - hidden on very small screens */}
+                    <div className="hidden sm:flex items-center gap-1">
+                      <span className="text-xs text-gray-400">r:</span>
                       <input
                         type="range"
                         min="50"
@@ -1392,23 +1393,23 @@ export default function SortPage() {
                         step="50"
                         value={mapRadius}
                         onChange={(e) => setMapRadius(Number(e.target.value))}
-                        className="w-16 h-1 bg-gray-600 rounded appearance-none cursor-pointer"
+                        className="w-12 lg:w-16 h-1 bg-gray-600 rounded appearance-none cursor-pointer"
                       />
-                      <span className="text-xs text-gray-400 w-10">{mapRadius}m</span>
+                      <span className="text-xs text-gray-400 w-8">{mapRadius}m</span>
                     </div>
                   </div>
                   
                   {/* fullscreen toggle */}
                   <button
                     onClick={() => setMapFullscreen(!mapFullscreen)}
-                    className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded transition"
+                    className="px-1.5 lg:px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded transition"
                   >
-                    {mapFullscreen ? '✕ close' : '⛶ fullscreen'}
+                    {mapFullscreen ? '✕' : '⛶'}
                   </button>
                 </div>
                 
                 {/* leaflet map */}
-                <div className={`rounded overflow-hidden border border-gray-600 ${mapFullscreen ? 'h-[calc(100vh-120px)]' : 'h-48'}`}>
+                <div className={`rounded overflow-hidden border border-gray-600 ${mapFullscreen ? 'h-[calc(100vh-120px)]' : 'h-32 lg:h-48'}`}>
                   <MapContainer
                     center={[mapCoords.lat, mapCoords.lon]}
                     zoom={15}
@@ -1457,14 +1458,14 @@ export default function SortPage() {
                     rel="noopener noreferrer"
                     className="text-blue-400 hover:underline"
                   >
-                    open in maps ↗
+                    open ↗
                   </a>
                 </div>
-              </div>
+              </details>
             </div>
 
-            {/* keyboard shortcuts */}
-            <div className="text-xs text-gray-500 pt-4 border-t border-gray-700">
+            {/* keyboard shortcuts - hidden on mobile */}
+            <div className="hidden lg:block text-xs text-gray-500 pt-4 border-t border-gray-700">
               <div className="font-semibold mb-1">shortcuts:</div>
               <div>space: play/pause</div>
               <div>cmd+s: save & next</div>
@@ -1472,17 +1473,17 @@ export default function SortPage() {
             </div>
           </div>
 
-          {/* action buttons */}
-          <div className="p-4 border-t border-gray-700 grid grid-cols-2 gap-3">
+          {/* action buttons - sticky on mobile */}
+          <div className="sticky bottom-0 p-3 lg:p-4 border-t border-gray-700 grid grid-cols-2 gap-2 lg:gap-3 bg-gray-800">
             <button
               onClick={handleTrash}
-              className="px-4 py-3 bg-red-600 hover:bg-red-700 rounded font-semibold transition active:scale-95"
+              className="px-3 lg:px-4 py-2.5 lg:py-3 bg-red-600 hover:bg-red-700 rounded font-semibold transition active:scale-95 text-sm lg:text-base"
             >
               trash
             </button>
             <button
               onClick={handleSave}
-              className="px-4 py-3 bg-green-600 hover:bg-green-700 rounded font-semibold transition active:scale-95"
+              className="px-3 lg:px-4 py-2.5 lg:py-3 bg-green-600 hover:bg-green-700 rounded font-semibold transition active:scale-95 text-sm lg:text-base"
             >
               save & next
             </button>
