@@ -131,6 +131,14 @@ export default function SortPage() {
   const [sessionNames, setSessionNames] = useState<string[]>([]);
   const [showSessionDropdown, setShowSessionDropdown] = useState(false);
   const [filteredSessions, setFilteredSessions] = useState<string[]>([]);
+  
+  // resizable panel state - load from localStorage
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = localStorage.getItem('sortPageSidebarWidth');
+    return saved ? parseInt(saved, 10) : 420;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // update video playback speed
   useEffect(() => {
@@ -138,6 +146,40 @@ export default function SortPage() {
       videoRef.current.playbackRate = playbackSpeed;
     }
   }, [playbackSpeed]);
+
+  // save sidebar width to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('sortPageSidebarWidth', sidebarWidth.toString());
+  }, [sidebarWidth]);
+
+  // handle resize drag
+  const handleResizeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  const handleResizeMouseMove = (e: MouseEvent) => {
+    if (!isResizing || !containerRef.current) return;
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const newWidth = containerRect.right - e.clientX;
+    // clamp between 280 and 600 pixels
+    setSidebarWidth(Math.max(280, Math.min(600, newWidth)));
+  };
+
+  const handleResizeMouseUp = () => {
+    setIsResizing(false);
+  };
+
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleResizeMouseMove);
+      document.addEventListener('mouseup', handleResizeMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleResizeMouseMove);
+        document.removeEventListener('mouseup', handleResizeMouseUp);
+      };
+    }
+  }, [isResizing]);
 
   // filter autocomplete
   useEffect(() => {
@@ -632,7 +674,8 @@ export default function SortPage() {
 
   return (
     <div 
-      className="fixed inset-0 bg-gray-900 text-white overflow-hidden select-none"
+      ref={containerRef}
+      className={`fixed inset-0 bg-gray-900 text-white overflow-hidden ${isResizing ? 'cursor-col-resize select-none' : ''}`}
       onMouseMove={handleTimelineMouseMove}
       onMouseUp={handleTimelineMouseUp}
       onTouchMove={handleTimelineTouchMove}
@@ -650,7 +693,7 @@ export default function SortPage() {
         </button>
         
         {showMenu && (
-          <div className="absolute top-12 left-0 bg-gray-800 rounded shadow-lg py-2 min-w-[200px]">
+          <div className="absolute top-12 left-0 bg-gray-800 rounded shadow-lg py-2 min-w-[200px] z-50">
             <Link to="/" className="block px-4 py-2 hover:bg-gray-700">home</Link>
             <Link to="/upload" className="block px-4 py-2 hover:bg-gray-700">upload</Link>
             <Link to="/sort" className="block px-4 py-2 hover:bg-gray-700 bg-gray-700">sort</Link>
@@ -661,106 +704,51 @@ export default function SortPage() {
         )}
       </div>
 
-      <div className="h-full flex flex-col lg:flex-row pt-16 lg:pt-0">
-        {/* video player */}
-        <div className="flex-1 flex flex-col items-center justify-center bg-black p-2 lg:p-4 min-h-[40vh] lg:min-h-0">
-          {videoError ? (
-            <div className="text-center p-8 bg-gray-800 rounded-lg">
-              <div className="text-red-400 text-lg mb-4">⚠️ video unavailable</div>
-              <div className="text-gray-400 text-sm mb-4">{videoError}</div>
-              <button
-                onClick={() => {
-                  setVideoError(null);
-                  fetchNext();
+      <div className="h-full flex">
+        {/* left side: video + controls */}
+        <div className="flex-1 flex flex-col bg-black overflow-hidden">
+          {/* video container */}
+          <div className="flex-1 flex items-center justify-center p-4 min-h-0">
+            {videoError ? (
+              <div className="text-center p-8 bg-gray-800 rounded-lg">
+                <div className="text-red-400 text-lg mb-4">⚠️ video unavailable</div>
+                <div className="text-gray-400 text-sm mb-4">{videoError}</div>
+                <button
+                  onClick={() => { setVideoError(null); fetchNext(); }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white"
+                >
+                  skip to next clip
+                </button>
+              </div>
+            ) : (
+              <video
+                ref={videoRef}
+                src={`/api/upload/media/${segment.original_file.id}`}
+                className="max-w-full max-h-full rounded shadow-2xl"
+                onTimeUpdate={handleVideoTimeUpdate}
+                onEnded={() => setIsPlaying(false)}
+                onError={(e) => {
+                  console.error('video load error:', e);
+                  setVideoError('this video file could not be loaded. it may have been archived or deleted.');
+                  setIsPlaying(false);
                 }}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white"
-              >
-                skip to next clip
-              </button>
-            </div>
-          ) : (
-            <video
-              ref={videoRef}
-              src={`/api/upload/media/${segment.original_file.id}`}
-              className="max-w-full max-h-full rounded shadow-2xl"
-              onTimeUpdate={handleVideoTimeUpdate}
-              onEnded={() => setIsPlaying(false)}
-              onError={(e) => {
-                console.error('video load error:', e);
-                setVideoError('this video file could not be loaded. it may have been archived or deleted.');
-                setIsPlaying(false);
-              }}
-            />
-          )}
-          
-          {/* clips list for current video */}
-          {videoSegments.length > 0 && (
-            <div className="mt-4 w-full max-w-3xl p-3 bg-gray-900 rounded border border-gray-700">
-              <div className="text-xs font-semibold text-gray-400 mb-2">
-                all clips from this video ({videoSegments.length})
-              </div>
-              <div className="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto">
-                {videoSegments.map((seg, idx) => (
-                  <div
-                    key={seg.segment_id}
-                    className={`p-2 rounded text-xs cursor-pointer transition ${
-                      seg.segment_id === segment?.segment_id
-                        ? 'bg-blue-600 text-white'
-                        : seg.status === 'ACCEPTED'
-                        ? 'bg-green-900 text-green-300'
-                        : seg.status === 'REJECTED'
-                        ? 'bg-red-900 text-red-300'
-                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                    }`}
-                    onClick={async () => {
-                      setVideoError(null);
-                      try {
-                        const res = await axios.get(`/api/sort/segment/${seg.segment_id}`);
-                        setSegment(res.data);
-                        const bufferMs = 2000;
-                        const start = Math.max(0, res.data.start_ms - bufferMs);
-                        const end = Math.min(res.data.original_file.duration_ms, res.data.end_ms + bufferMs);
-                        setRange([start, end]);
-                        setCurrentTime(start);
-                        
-                        // autoplay
-                        setTimeout(() => {
-                          if (videoRef.current) {
-                            videoRef.current.currentTime = start / 1000;
-                            videoRef.current.play().catch(e => console.log('autoplay blocked:', e));
-                            setIsPlaying(true);
-                          }
-                        }, 100);
-                      } catch (e) {
-                        console.error('error loading segment:', e);
-                      }
-                    }}
-                  >
-                    <div className="font-semibold">#{idx + 1}</div>
-                    <div>{formatTime(seg.start_ms)}</div>
-                    <div className="text-[10px] opacity-75">
-                      {(seg.confidence_score * 100).toFixed(0)}%
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+              />
+            )}
+          </div>
 
-        {/* sidebar controls */}
-        <div className="w-full lg:w-96 xl:w-[420px] flex flex-col bg-gray-800 border-t lg:border-t-0 lg:border-l border-gray-700 max-h-[60vh] lg:max-h-full overflow-y-auto lg:overflow-y-visible">
-          {/* timeline scrubber */}
-          <div className="p-3 lg:p-4 border-b border-gray-700">
+          {/* timeline + controls under video */}
+          <div className="flex-shrink-0 bg-gray-900 border-t border-gray-700 p-3">
+            {/* time display */}
             <div className="mb-2 flex justify-between text-xs text-gray-400">
               <span>{formatTime(range[0])}</span>
-              <span className="font-bold text-white">{formatTime(range[1] - range[0])}</span>
+              <span className="font-bold text-white">{formatTime(range[1] - range[0])} duration</span>
               <span>{formatTime(range[1])}</span>
             </div>
             
+            {/* timeline scrubber */}
             <div 
               ref={timelineRef}
-              className="relative h-14 lg:h-20 bg-gray-700 rounded cursor-crosshair touch-none"
+              className="relative h-12 bg-gray-700 rounded cursor-crosshair touch-none select-none"
               onClick={(e) => {
                 if (isDragging || !videoRef.current || !timelineRef.current) return;
                 const rect = timelineRef.current.getBoundingClientRect();
@@ -770,7 +758,7 @@ export default function SortPage() {
                 videoRef.current.currentTime = newTime / 1000;
               }}
             >
-              {/* selected range - now draggable */}
+              {/* selected range */}
               <div 
                 className="absolute top-0 bottom-0 bg-blue-500 bg-opacity-30 border-l-2 border-r-2 border-blue-400 cursor-move"
                 style={{
@@ -789,145 +777,114 @@ export default function SortPage() {
               
               {/* playhead */}
               <div 
-                className="absolute top-0 bottom-0 w-1 bg-white z-10 shadow"
-                style={{
-                  left: `${(currentTime / segment.original_file.duration_ms) * 100}%`
-                }}
+                className="absolute top-0 bottom-0 w-0.5 bg-white z-10 shadow"
+                style={{ left: `${(currentTime / segment.original_file.duration_ms) * 100}%` }}
               />
               
               {/* start handle */}
               <div 
-                className="absolute top-1/2 -translate-y-1/2 w-5 h-12 bg-blue-600 hover:bg-blue-500 cursor-ew-resize z-20 flex items-center justify-center rounded shadow-lg active:scale-110 transition-transform"
-                style={{
-                  left: `${(range[0] / segment.original_file.duration_ms) * 100}%`,
-                  transform: 'translate(-50%, -50%)'
-                }}
+                className="absolute top-1/2 -translate-y-1/2 w-4 h-10 bg-blue-600 hover:bg-blue-500 cursor-ew-resize z-20 flex items-center justify-center rounded shadow-lg"
+                style={{ left: `${(range[0] / segment.original_file.duration_ms) * 100}%`, transform: 'translate(-50%, -50%)' }}
                 onMouseDown={handleTimelineMouseDown('start')}
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  setIsDragging('start');
-                }}
+                onTouchStart={(e) => { e.preventDefault(); setIsDragging('start'); }}
               >
-                <div className="w-1 h-8 bg-white rounded"></div>
+                <div className="w-0.5 h-6 bg-white rounded"></div>
               </div>
               
               {/* end handle */}
               <div 
-                className="absolute top-1/2 -translate-y-1/2 w-5 h-12 bg-blue-600 hover:bg-blue-500 cursor-ew-resize z-20 flex items-center justify-center rounded shadow-lg active:scale-110 transition-transform"
-                style={{
-                  left: `${(range[1] / segment.original_file.duration_ms) * 100}%`,
-                  transform: 'translate(-50%, -50%)'
-                }}
+                className="absolute top-1/2 -translate-y-1/2 w-4 h-10 bg-blue-600 hover:bg-blue-500 cursor-ew-resize z-20 flex items-center justify-center rounded shadow-lg"
+                style={{ left: `${(range[1] / segment.original_file.duration_ms) * 100}%`, transform: 'translate(-50%, -50%)' }}
                 onMouseDown={handleTimelineMouseDown('end')}
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  setIsDragging('end');
-                }}
+                onTouchStart={(e) => { e.preventDefault(); setIsDragging('end'); }}
               >
-                <div className="w-1 h-8 bg-white rounded"></div>
+                <div className="w-0.5 h-6 bg-white rounded"></div>
               </div>
             </div>
 
-            {/* playback controls */}
-            <div className="mt-3 flex gap-2">
-              <button
-                onClick={togglePlayPause}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded font-semibold flex-1 transition"
-              >
+            {/* controls row */}
+            <div className="mt-3 flex items-center gap-3">
+              {/* play/pause */}
+              <button onClick={togglePlayPause} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded font-semibold">
                 {isPlaying ? '⏸' : '▶'}
               </button>
-              <button
-                onClick={() => {
-                  if (videoRef.current) {
-                    videoRef.current.currentTime = range[0] / 1000;
-                    setCurrentTime(range[0]);
-                  }
-                }}
-                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded transition"
-                title="jump to start"
-              >
-                ⏮
-              </button>
-              <button
-                onClick={() => {
-                  if (videoRef.current) {
-                    videoRef.current.currentTime = range[1] / 1000;
-                    setCurrentTime(range[1]);
-                  }
-                }}
-                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded transition"
-                title="jump to end"
-              >
-                ⏭
-              </button>
+              <button onClick={() => { if (videoRef.current) { videoRef.current.currentTime = range[0] / 1000; setCurrentTime(range[0]); } }} className="px-2 py-2 bg-gray-700 hover:bg-gray-600 rounded" title="jump to start">⏮</button>
+              <button onClick={() => { if (videoRef.current) { videoRef.current.currentTime = range[1] / 1000; setCurrentTime(range[1]); } }} className="px-2 py-2 bg-gray-700 hover:bg-gray-600 rounded" title="jump to end">⏭</button>
+              
+              {/* speed */}
+              <div className="flex items-center gap-1 ml-2">
+                <span className="text-xs text-gray-400">speed:</span>
+                {speedOptions.map(speed => (
+                  <button key={speed} onClick={() => setPlaybackSpeed(speed)}
+                    className={`px-1.5 py-1 text-xs rounded ${playbackSpeed === speed ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+                  >{speed}x</button>
+                ))}
+              </div>
+              
+              {/* trim controls */}
+              <div className="flex items-center gap-2 ml-auto">
+                <span className="text-xs text-gray-400">in:</span>
+                <button onClick={() => adjustStartTime(-1000)} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">-1s</button>
+                <button onClick={() => adjustStartTime(1000)} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">+1s</button>
+                <span className="text-xs text-gray-400 ml-2">out:</span>
+                <button onClick={() => adjustEndTime(-1000)} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">-1s</button>
+                <button onClick={() => adjustEndTime(1000)} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">+1s</button>
+              </div>
             </div>
 
-            {/* speed controls */}
-            <div className="mt-2 lg:mt-3">
-              <label className="block mb-1 lg:mb-2 text-xs font-semibold text-gray-400">speed: {playbackSpeed}x</label>
-              <div className="flex gap-1 flex-wrap">
-                {speedOptions.map(speed => (
+            {/* clips from this video */}
+            {videoSegments.length > 1 && (
+              <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1">
+                <span className="text-xs text-gray-400 flex-shrink-0">clips:</span>
+                {videoSegments.map((seg, idx) => (
                   <button
-                    key={speed}
-                    onClick={() => setPlaybackSpeed(speed)}
-                    className={`px-1.5 lg:px-2 py-1 text-xs rounded font-medium transition ${
-                      playbackSpeed === speed
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    key={seg.segment_id}
+                    onClick={async () => {
+                      setVideoError(null);
+                      try {
+                        const res = await axios.get(`/api/sort/segment/${seg.segment_id}`);
+                        setSegment(res.data);
+                        const bufferMs = 2000;
+                        const start = Math.max(0, res.data.start_ms - bufferMs);
+                        const end = Math.min(res.data.original_file.duration_ms, res.data.end_ms + bufferMs);
+                        setRange([start, end]);
+                        setCurrentTime(start);
+                        setTimeout(() => {
+                          if (videoRef.current) { videoRef.current.currentTime = start / 1000; videoRef.current.play().catch(() => {}); setIsPlaying(true); }
+                        }, 100);
+                      } catch (e) { console.error('error loading segment:', e); }
+                    }}
+                    className={`px-2 py-1 rounded text-xs flex-shrink-0 ${
+                      seg.segment_id === segment?.segment_id ? 'bg-blue-600 text-white' :
+                      seg.status === 'ACCEPTED' ? 'bg-green-800 text-green-200' :
+                      seg.status === 'REJECTED' ? 'bg-red-800 text-red-200' :
+                      'bg-gray-700 text-gray-300 hover:bg-gray-600'
                     }`}
                   >
-                    {speed}x
+                    #{idx + 1}
                   </button>
                 ))}
               </div>
-            </div>
+            )}
+          </div>
+        </div>
 
-            {/* precision trim controls */}
-            <div className="mt-2 lg:mt-3 grid grid-cols-2 gap-2">
-              <div>
-                <label className="block mb-1 text-xs font-semibold text-gray-400">cut in</label>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => adjustStartTime(-1000)}
-                    className="flex-1 px-1.5 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
-                    title="subtract 1 second from start"
-                  >
-                    -1s
-                  </button>
-                  <button
-                    onClick={() => adjustStartTime(1000)}
-                    className="flex-1 px-1.5 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
-                    title="add 1 second to start"
-                  >
-                    +1s
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label className="block mb-1 text-xs font-semibold text-gray-400">cut out</label>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => adjustEndTime(-1000)}
-                    className="flex-1 px-1.5 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
-                    title="subtract 1 second from end"
-                  >
-                    -1s
-                  </button>
-                  <button
-                    onClick={() => adjustEndTime(1000)}
-                    className="flex-1 px-1.5 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
-                    title="add 1 second to end"
-                  >
-                    +1s
-                  </button>
-                </div>
-              </div>
-            </div>
-            
-            {/* clip metadata - collapsible on mobile */}
-            <details className="mt-2 lg:mt-4 bg-gray-900 rounded border border-gray-700">
-              <summary className="p-2 lg:p-3 text-xs font-semibold text-gray-400 cursor-pointer">clip details</summary>
-              <div className="px-2 lg:px-3 pb-2 lg:pb-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+        {/* resize handle */}
+        <div
+          onMouseDown={handleResizeMouseDown}
+          className="w-1.5 bg-gray-700 hover:bg-blue-500 cursor-col-resize transition-colors flex-shrink-0"
+          title="drag to resize"
+        />
+
+        {/* sidebar: form fields only */}
+        <div 
+          className="flex flex-col bg-gray-800 overflow-hidden"
+          style={{ width: `${sidebarWidth}px`, minWidth: '280px', maxWidth: '500px' }}
+        >
+          {/* clip metadata - collapsible */}
+          <details className="bg-gray-900 border-b border-gray-700">
+            <summary className="p-2 text-xs font-semibold text-gray-400 cursor-pointer">clip details</summary>
+            <div className="px-2 pb-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                 <div className="text-gray-500">camera:</div>
                 <div className="text-gray-300">{segment.original_file.camera_id || 'unknown'}</div>
                 
@@ -967,13 +924,12 @@ export default function SortPage() {
                 <div className="text-gray-300">
                   {segment.detection_method || 'unknown'}
                 </div>
-              </div>
-            </details>
-          </div>
+            </div>
+          </details>
 
           {/* clip navigator */}
           {segment.video_context && (
-            <div className="p-3 lg:p-4 bg-gray-900 border-b border-gray-700">
+            <div className="p-3 bg-gray-900 border-b border-gray-700 flex-shrink-0">
               <div className="flex justify-between items-center mb-2">
                 <div className="text-xs font-semibold text-gray-400">video progress</div>
                 <div className="text-xs text-gray-400">
@@ -1000,10 +956,10 @@ export default function SortPage() {
             </div>
           )}
 
-          {/* form fields */}
-          <div className="flex-1 overflow-y-auto p-3 lg:p-4 space-y-3 lg:space-y-4">
+          {/* form fields - scrollable */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-3">
             <div className="relative">
-              <label className="block mb-1 lg:mb-2 text-sm font-semibold text-gray-300">session name</label>
+              <label className="block mb-1 text-sm font-semibold text-gray-300">session name</label>
               <input
                 type="text"
                 value={sessionName}
@@ -1032,13 +988,13 @@ export default function SortPage() {
             </div>
 
             <div>
-              <label className="block mb-1 lg:mb-2 text-sm font-semibold text-gray-300">category</label>
-              <div className="grid grid-cols-4 gap-1.5 lg:gap-2">
+              <label className="block mb-1 text-sm font-semibold text-gray-300">category</label>
+              <div className="grid grid-cols-4 gap-1">
                 {['TRICK', 'CRASH', 'BROLL', 'OTHER'].map(cat => (
                   <button
                     key={cat}
                     onClick={() => setCategory(cat)}
-                    className={`px-1.5 lg:px-2 py-1.5 lg:py-2 rounded font-semibold text-xs transition ${
+                    className={`px-1 py-1.5 rounded font-semibold text-xs transition ${
                       category === cat 
                         ? cat === 'CRASH' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'
                         : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
@@ -1367,49 +1323,32 @@ export default function SortPage() {
                 )}
               </div>
               
-              {/* map - collapsible on mobile */}
-              <details className={`${mapFullscreen ? 'fixed inset-0 z-[9999] bg-gray-900 p-4' : ''}`} open>
-                <summary className="text-xs font-semibold text-gray-400 cursor-pointer mb-2 lg:hidden">📍 map (tap to toggle)</summary>
+              {/* map - collapsible */}
+              <details className={`${mapFullscreen ? 'fixed inset-0 z-[9999] bg-gray-900 p-4' : ''}`}>
+                <summary className="text-xs font-semibold text-gray-400 cursor-pointer mb-2">📍 map (click to expand)</summary>
                 {/* map controls */}
-                <div className={`flex items-center justify-between gap-2 mb-2 ${mapFullscreen ? '' : ''}`}>
-                  <div className="flex items-center gap-1 lg:gap-2 flex-wrap">
-                    {/* layer toggle */}
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-1 flex-wrap">
                     <button
                       onClick={() => setMapLayer(mapLayer === 'street' ? 'satellite' : 'street')}
-                      className={`px-1.5 lg:px-2 py-1 text-xs rounded transition ${
-                        mapLayer === 'satellite' ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'
-                      }`}
+                      className={`px-1.5 py-1 text-xs rounded transition ${mapLayer === 'satellite' ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
                     >
                       {mapLayer === 'street' ? '🛰️' : '🗺️'}
                     </button>
-                    
-                    {/* radius slider - hidden on very small screens */}
-                    <div className="hidden sm:flex items-center gap-1">
-                      <span className="text-xs text-gray-400">r:</span>
-                      <input
-                        type="range"
-                        min="50"
-                        max="500"
-                        step="50"
-                        value={mapRadius}
-                        onChange={(e) => setMapRadius(Number(e.target.value))}
-                        className="w-12 lg:w-16 h-1 bg-gray-600 rounded appearance-none cursor-pointer"
-                      />
-                      <span className="text-xs text-gray-400 w-8">{mapRadius}m</span>
-                    </div>
+                    <input
+                      type="range" min="50" max="500" step="50" value={mapRadius}
+                      onChange={(e) => setMapRadius(Number(e.target.value))}
+                      className="w-16 h-1 bg-gray-600 rounded appearance-none cursor-pointer"
+                    />
+                    <span className="text-xs text-gray-400">{mapRadius}m</span>
                   </div>
-                  
-                  {/* fullscreen toggle */}
-                  <button
-                    onClick={() => setMapFullscreen(!mapFullscreen)}
-                    className="px-1.5 lg:px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded transition"
-                  >
+                  <button onClick={() => setMapFullscreen(!mapFullscreen)} className="px-1.5 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded">
                     {mapFullscreen ? '✕' : '⛶'}
                   </button>
                 </div>
                 
                 {/* leaflet map */}
-                <div className={`rounded overflow-hidden border border-gray-600 ${mapFullscreen ? 'h-[calc(100vh-120px)]' : 'h-32 lg:h-48'}`}>
+                <div className={`rounded overflow-hidden border border-gray-600 ${mapFullscreen ? 'h-[calc(100vh-120px)]' : 'h-36'}`}>
                   <MapContainer
                     center={[mapCoords.lat, mapCoords.lon]}
                     zoom={15}
@@ -1464,26 +1403,23 @@ export default function SortPage() {
               </details>
             </div>
 
-            {/* keyboard shortcuts - hidden on mobile */}
-            <div className="hidden lg:block text-xs text-gray-500 pt-4 border-t border-gray-700">
-              <div className="font-semibold mb-1">shortcuts:</div>
-              <div>space: play/pause</div>
-              <div>cmd+s: save & next</div>
-              <div>cmd+d: trash</div>
+            {/* keyboard shortcuts */}
+            <div className="text-xs text-gray-500 pt-3 border-t border-gray-700">
+              <span className="font-semibold">shortcuts:</span> space=play · ⌘S=save · ⌘D=trash
             </div>
           </div>
 
-          {/* action buttons - sticky on mobile */}
-          <div className="sticky bottom-0 p-3 lg:p-4 border-t border-gray-700 grid grid-cols-2 gap-2 lg:gap-3 bg-gray-800">
+          {/* action buttons */}
+          <div className="flex-shrink-0 p-3 border-t border-gray-700 grid grid-cols-2 gap-2 bg-gray-800">
             <button
               onClick={handleTrash}
-              className="px-3 lg:px-4 py-2.5 lg:py-3 bg-red-600 hover:bg-red-700 rounded font-semibold transition active:scale-95 text-sm lg:text-base"
+              className="px-3 py-2 bg-red-600 hover:bg-red-700 rounded font-semibold transition active:scale-95 text-sm"
             >
               trash
             </button>
             <button
               onClick={handleSave}
-              className="px-3 lg:px-4 py-2.5 lg:py-3 bg-green-600 hover:bg-green-700 rounded font-semibold transition active:scale-95 text-sm lg:text-base"
+              className="px-3 py-2 bg-green-600 hover:bg-green-700 rounded font-semibold transition active:scale-95 text-sm"
             >
               save & next
             </button>

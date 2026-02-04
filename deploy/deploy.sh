@@ -50,11 +50,13 @@ gcloud compute ssh ${REMOTE_USER}@${REMOTE_HOST} --zone=${ZONE} --command="
     docker compose exec -T backend alembic upgrade head
 "
 
-# step 4: restart services (no rebuild for code-only changes)
-echo "🔄 restarting containers..."
+# step 4: rebuild and restart services (frontend needs rebuild since code is in image)
+echo "🔄 rebuilding and restarting containers..."
 gcloud compute ssh ${REMOTE_USER}@${REMOTE_HOST} --zone=${ZONE} --command="
     cd ${REMOTE_DIR}/deploy
-    docker compose restart backend frontend worker
+    docker compose build --no-cache frontend
+    docker compose up -d frontend
+    docker compose restart backend worker
 "
 
 # step 5: verify services are running
