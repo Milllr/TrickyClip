@@ -2,7 +2,7 @@
 
 an AI-powered ski/snowboard clip organizer i built to solve a real problem. after a session you end up with hours of GoPro footage and no easy way to find the actual tricks. trickyclip detects trick moments using motion analysis and lets you sort through them tinder-style. accepted clips get auto-organized to google drive with searchable filenames.
 
-*the hosted version ran for ~3 months on a google cloud VM but i took it offline to save on hosting costs (~$30/mo). still runs locally via docker compose.*
+*the hosted version ran for 3 months on a google cloud VM but i took it offline to save on hosting costs ($30/mo). still runs locally via docker compose.*
 
 ## how it works
 
